@@ -6,7 +6,10 @@
 # Sanitized exports only: remove_secret makes the routeros model run
 # "/export hide-sensitive"; the device account can't read secrets either way.
 username: oxidized
-resolve_dns: true
+# false: unresolvable nodes stay in the node list and are re-tried every
+# cycle (several device names exist only in HamWAN-internal DNS, which is
+# unreachable when its site is down; true would drop them permanently at load)
+resolve_dns: false
 interval: 3600
 threads: 8
 timeout: 30
