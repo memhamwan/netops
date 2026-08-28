@@ -1,0 +1,48 @@
+---
+# Oxidized configuration for the MemHamWAN RouterOS fleet.
+# Deployed to /var/lib/netops/oxidized/config on the backup host (see deploy.sh).
+# Auth: SSH publickey as device user "oxidized" (read-only, no sensitive policy),
+# key at /home/oxidized/.ssh/id_ed25519 inside the container.
+# Sanitized exports only: remove_secret makes the routeros model run
+# "/export hide-sensitive"; the device account can't read secrets either way.
+username: oxidized
+resolve_dns: true
+interval: 3600
+threads: 8
+timeout: 30
+retries: 2
+rest: 0.0.0.0:8888
+next_adds_job: false
+pid: /home/oxidized/.config/oxidized/pid
+crash:
+  directory: /home/oxidized/.config/oxidized/crashes
+  hostnames: false
+vars:
+  ssh_port: 222
+  remove_secret: true
+input:
+  default: ssh
+  debug: false
+  ssh:
+    secure: false
+output:
+  default: git
+  git:
+    user: oxidized
+    email: netops@memhamwan.net
+    repo: /home/oxidized/.config/oxidized/devices.git
+source:
+  default: csv
+  csv:
+    file: /home/oxidized/.config/oxidized/router.db
+    delimiter: !ruby/regexp /:/
+    map:
+      name: 0
+      model: 1
+hooks:
+  push_to_github:
+    type: exec
+    events: [nodes_done]
+    timeout: 180
+    async: false
+    cmd: 'cd /home/oxidized/.config/oxidized/devices.git && GIT_SSH_COMMAND="ssh -i /home/oxidized/.ssh/gh_deploy_ed25519 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/oxidized/.ssh/known_hosts" git push git@github.com:memhamwan/routeros-config-audit.git HEAD:main'

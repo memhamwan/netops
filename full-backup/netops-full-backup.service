@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly sops/age-encrypted full RouterOS config backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/netops/full-backup/full-export-backup.sh
+Nice=10

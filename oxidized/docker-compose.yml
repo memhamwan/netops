@@ -1,0 +1,12 @@
+services:
+  oxidized:
+    image: oxidized/oxidized:latest
+    container_name: oxidized
+    restart: unless-stopped
+    volumes:
+      - /var/lib/netops/oxidized:/home/oxidized/.config/oxidized
+      - /var/lib/netops/ssh:/home/oxidized/.ssh
+    ports:
+      # oxidized-web: loopback + Tailscale only, never the HamWAN/LAN interface
+      - "127.0.0.1:8888:8888"
+      - "100.105.186.10:8888:8888"
