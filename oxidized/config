@@ -12,8 +12,12 @@ username: oxidized
 resolve_dns: false
 interval: 3600
 threads: 8
-timeout: 30
-retries: 2
+# always run the full thread pool: with many dark sites the adaptive
+# scheduler degenerates to one ~90s-timeout node at a time
+use_max_threads: true
+timeout: 15
+# hourly cycles already provide retry; per-cycle retries just slow the sweep
+retries: 1
 rest: 0.0.0.0:8888
 next_adds_job: false
 pid: /home/oxidized/.config/oxidized/pid
