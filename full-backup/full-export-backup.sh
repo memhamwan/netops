@@ -39,7 +39,7 @@ while IFS=: read -r host _model; do
   [ -z "$host" ] && continue
   case "$host" in "#"*) continue ;; esac
   plain="$tmpdir/$host.rsc"
-  if ssh -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=20 \
+  if ssh -n -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=20 \
       -o StrictHostKeyChecking=accept-new \
       "$SSH_USER@$host" '/export show-sensitive' 2>/dev/null \
       | tr -d '\r' > "$plain" && [ -s "$plain" ]; then
