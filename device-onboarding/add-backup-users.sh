@@ -28,7 +28,7 @@ for host in "$@"; do
   echo "=== $host"
   pw_ro=$(openssl rand -base64 24)
   pw_full=$(openssl rand -base64 24)
-  if ! scp -q -P "$SSH_PORT" -o ConnectTimeout=20 -o BatchMode=yes \
+  if ! scp -q -O -P "$SSH_PORT" -o ConnectTimeout=20 -o BatchMode=yes \
       "$PUB_RO" "$ADMIN_USER@$host:oxidized.pub" ||
      ! scp -q -P "$SSH_PORT" -o ConnectTimeout=20 -o BatchMode=yes \
       "$PUB_FULL" "$ADMIN_USER@$host:oxidized-full.pub"; then
