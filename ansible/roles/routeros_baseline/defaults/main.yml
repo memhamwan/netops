@@ -1,0 +1,29 @@
+---
+# DRAFT — this role has never been executed. See role README.
+collector_ip: 44.34.128.45
+# sources allowed to reach the RouterOS API; extend per-run for laptop use:
+#   -e '{"api_extra_sources": ["44.34.128.60/32"]}'
+api_allowed_sources: "{{ [collector_ip ~ '/32'] + (api_extra_sources | default([])) }}"
+
+ntp_servers:
+  - 44.34.128.181        # ntp.leb
+  - 44.34.133.3
+  - time.cloudflare.com  # off-network fallback (LEB outage lesson, sec1.sco drift)
+
+syslog_topics: [system, error, warning, critical, account]
+
+# users the fleet is EXPECTED to have; anything else is reported by audit.yml
+expected_users:
+  - admin
+  - ansible
+  - oxidized
+  - oxidized-full
+  - mktxp
+operators:
+  - turnrye
+
+service_groups:
+  - {name: netops-backup-ro, policy: "ssh,read"}
+  - {name: netops-backup-full, policy: "ssh,read,sensitive"}
+  - {name: mktxp_group, policy: "api,read"}
+  - {name: netops-ansible, policy: "api,ssh,ftp,read,write,policy,test"}

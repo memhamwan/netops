@@ -1,0 +1,8 @@
+---
+# DRAFT — never executed against a device. Review gate: see role README.
+- ansible.builtin.import_tasks: users.yml
+- ansible.builtin.import_tasks: services.yml
+- ansible.builtin.import_tasks: logging.yml
+- ansible.builtin.import_tasks: ntp.yml
+- ansible.builtin.import_tasks: identity.yml
+- ansible.builtin.import_tasks: audit.yml

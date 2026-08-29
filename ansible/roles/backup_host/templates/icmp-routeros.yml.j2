@@ -1,0 +1,8 @@
+# RENDERED from ansible/inventory/hosts.yml — do not edit by hand.
+{% for site in groups['routeros'] | map('extract', hostvars, 'group_names') | map('reject', 'eq', 'routeros') | map('first') | unique | sort %}
+- labels: {site: {{ site }}}
+  targets:
+{% for h in groups[site] | sort %}
+    - {{ h }}
+{% endfor %}
+{% endfor %}

@@ -1,0 +1,5 @@
+{% for site in groups['routeros'] | map('extract', hostvars, 'group_names') | map('reject', 'eq', 'routeros') | map('first') | unique | sort %}
+{% for h in groups[site] | sort %}
+{{ h }}:routeros
+{% endfor %}
+{% endfor %}

@@ -1,0 +1,30 @@
+---
+# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+#
+# Applies the routeros_baseline role over the RouterOS API as the dedicated
+# `ansible` user (created by bootstrap_ansible_user.yml). API credentials come
+# from sops — the operator's age key decrypts at run time; devices' API is
+# ACL'd to the collector, so run from rpi.sco or pass api_extra_sources.
+# First real run should be: --check --diff -e confirm_execution=true
+- name: RouterOS fleet baseline
+  hosts: routeros
+  gather_facts: false
+  connection: local
+  module_defaults:
+    group/community.routeros.api:
+      hostname: "{{ inventory_hostname }}"
+      username: ansible
+      password: "{{ routeros_svc_api_password }}"
+  pre_tasks:
+    - name: Execution gate — this play is a draft pending review
+      ansible.builtin.assert:
+        that: confirm_execution | default(false) | bool
+        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+      run_once: true
+    - name: Load secrets from sops
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      run_once: true
+      delegate_to: localhost
+  roles:
+    - routeros_baseline

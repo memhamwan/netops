@@ -1,0 +1,12 @@
+---
+# AUDIT-ONLY (per Ryan): report accounts outside the expected set; never delete.
+- name: Compute unexpected users
+  ansible.builtin.set_fact:
+    unexpected_users: >-
+      {{ baseline_users.msg | map(attribute='name') | list
+         | difference(expected_users) | difference(operators) }}
+
+- name: Report unexpected users
+  ansible.builtin.debug:
+    msg: "AUDIT: unexpected user accounts on {{ inventory_hostname }}: {{ unexpected_users }}"
+  when: unexpected_users | length > 0

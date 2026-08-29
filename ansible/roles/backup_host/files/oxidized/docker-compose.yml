@@ -7,6 +7,7 @@ services:
       - /var/lib/netops/oxidized:/home/oxidized/.config/oxidized
       - /var/lib/netops/ssh:/home/oxidized/.ssh
     ports:
-      # oxidized-web: loopback + Tailscale only, never the HamWAN/LAN interface
+      # oxidized-web: loopback (ssh -L for browsing) + docker bridge (blackbox
+      # probe); never the HamWAN/LAN interface
       - "127.0.0.1:8888:8888"
-      - "100.105.186.10:8888:8888"
+      - "172.17.0.1:8888:8888"

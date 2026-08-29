@@ -1,0 +1,16 @@
+---
+# Deploy the backup/monitoring stack to rpi.sco.
+#   ansible-playbook playbooks/backup_host.yml
+# (Not router config — outside the router-change review gate.)
+- name: Deploy netops stack to backup host
+  hosts: backup_hosts
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Load secrets from sops
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      delegate_to: localhost
+      become: false
+  roles:
+    - backup_host

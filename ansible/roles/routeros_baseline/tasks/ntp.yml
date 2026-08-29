@@ -1,0 +1,6 @@
+---
+- name: Configure NTP client with off-network fallback
+  community.routeros.api_modify:
+    path: system ntp client
+    data:
+      - {enabled: true, servers: "{{ ntp_servers | join(',') }}"}

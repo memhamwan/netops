@@ -1,0 +1,33 @@
+---
+- name: restart sshd
+  ansible.builtin.shell: sshd -t && systemctl restart ssh
+  changed_when: true
+
+- name: systemd reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: compose up
+  ansible.builtin.command:
+    cmd: docker compose -f {{ netops_opt }}/{{ item }}/docker-compose.yml up -d
+  loop: [oxidized, monitoring]
+  changed_when: true
+
+- name: restart oxidized
+  ansible.builtin.command: docker restart oxidized
+  changed_when: true
+
+- name: restart mktxp
+  ansible.builtin.command: docker restart mktxp
+  changed_when: true
+
+- name: restart caddy
+  ansible.builtin.command: docker restart caddy
+  changed_when: true
+
+- name: reload monitoring
+  ansible.builtin.shell: |
+    docker compose -f {{ netops_opt }}/monitoring/docker-compose.yml up -d
+    docker restart grafana
+    curl -s -X POST http://127.0.0.1:9090/-/reload || true
+  changed_when: true

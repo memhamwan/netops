@@ -1,0 +1,12 @@
+[default]
+    enabled = True
+    username = mktxp
+    password = {{ mktxp_password }}
+    port = 8728
+    use_ssl = False
+    routerboard = True
+{% for h in groups['routeros'] | sort %}
+
+[{{ h | replace('.memhamwan.net', '') }}]
+    hostname = {{ h }}
+{% endfor %}

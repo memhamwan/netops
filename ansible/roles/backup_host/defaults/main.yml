@@ -1,0 +1,14 @@
+---
+netops_opt: /opt/netops
+netops_var: /var/lib/netops
+# uid/gid of the container users that own each data dir
+data_dirs:
+  - {path: prometheus, owner: "65534"}
+  - {path: alertmanager, owner: "65534"}
+  - {path: grafana, owner: "472"}
+  - {path: loki, owner: "10001"}
+  - {path: alloy, owner: "0"}
+  - {path: caddy/data, owner: "0"}
+  - {path: caddy/config, owner: "0"}
+# oxidized container uid
+oxidized_uid: "30000"

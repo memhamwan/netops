@@ -1,0 +1,128 @@
+---
+# Deploys/refreshes the whole netops stack on the backup host. Replaces the
+# retired deploy.sh. Secrets come from sops (loaded by the playbook);
+# fleet-derived files (router.db, ICMP targets, mktxp.conf) are templated
+# from the inventory at deploy time — the inventory is the only fleet list.
+- name: SSH on port 222 (network-wide convention) alongside 22
+  ansible.builtin.copy:
+    src: ssh/10-netops-ports.conf
+    dest: /etc/ssh/sshd_config.d/10-netops-ports.conf
+    mode: "0644"
+  notify: restart sshd
+
+- name: Sync stack code to {{ netops_opt }}
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ netops_opt }}/"
+    mode: preserve
+  loop: [oxidized, monitoring, full-backup]
+
+- name: Oxidized config directories
+  ansible.builtin.file:
+    path: "{{ netops_var }}/oxidized/{{ item }}"
+    state: directory
+    owner: "{{ oxidized_uid }}"
+    group: "{{ oxidized_uid }}"
+    mode: "0755"
+  loop: ["", model]
+
+- name: Install oxidized config + model override
+  ansible.builtin.copy:
+    src: "oxidized/{{ item.src }}"
+    dest: "{{ netops_var }}/oxidized/{{ item.dest }}"
+    owner: "{{ oxidized_uid }}"
+    group: "{{ oxidized_uid }}"
+    mode: "0644"
+  loop:
+    - {src: config, dest: config}
+    - {src: model/routeros.rb, dest: model/routeros.rb}
+  notify: restart oxidized
+
+- name: Render oxidized fleet list from inventory
+  ansible.builtin.template:
+    src: router.db.j2
+    dest: "{{ netops_var }}/oxidized/router.db"
+    owner: "{{ oxidized_uid }}"
+    group: "{{ oxidized_uid }}"
+    mode: "0644"
+  notify: restart oxidized
+
+- name: Install monitoring configs
+  ansible.builtin.copy:
+    src: "monitoring/{{ item }}"
+    dest: "{{ netops_var }}/monitoring/"
+    mode: "0644"
+  loop: [prometheus, alertmanager, blackbox, grafana, caddy, loki, alloy]
+  notify: reload monitoring
+
+- name: Render blackbox targets from inventory
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ netops_var }}/monitoring/prometheus/targets/{{ item }}"
+    mode: "0644"
+  loop: [icmp-routeros.yml, icmp-infra.yml]
+  notify: reload monitoring
+
+- name: Create data directories with container ownership
+  ansible.builtin.file:
+    path: "{{ netops_var }}/{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "0755"
+  loop: "{{ data_dirs }}"
+
+- name: Secrets directory
+  ansible.builtin.file:
+    path: "{{ netops_var }}/secrets"
+    state: directory
+    mode: "0755"
+
+- name: Write secrets from sops
+  ansible.builtin.copy:
+    content: "{{ item.value }}"
+    dest: "{{ netops_var }}/secrets/{{ item.name }}"
+    mode: "0644"
+  loop:
+    - {name: grafana-admin-password, value: "{{ grafana_admin_password }}"}
+    - {name: netops-basicauth-password, value: "{{ caddy_basicauth_password }}"}
+    - {name: discord-webhook-url, value: "{{ discord_webhook_url }}"}
+    - {name: mktxp-password, value: "{{ mktxp_password }}"}
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Write caddy auth snippet
+  ansible.builtin.template:
+    src: caddy-auth.snippet.j2
+    dest: "{{ netops_var }}/secrets/caddy-auth.snippet"
+    mode: "0644"
+  notify: restart caddy
+
+- name: Render mktxp.conf from inventory + sops
+  ansible.builtin.template:
+    src: mktxp.conf.j2
+    dest: "{{ netops_var }}/mktxp/mktxp.conf"
+    mode: "0600"
+  notify: restart mktxp
+
+- name: Install systemd units
+  ansible.builtin.copy:
+    src: "full-backup/{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop: [netops-full-backup.service, netops-full-backup.timer]
+  notify: systemd reload
+
+- name: Enable nightly backup timer
+  ansible.builtin.systemd:
+    name: netops-full-backup.timer
+    enabled: true
+    state: started
+
+- name: Ensure both compose stacks are up
+  ansible.builtin.command:
+    cmd: docker compose -f {{ netops_opt }}/{{ item }}/docker-compose.yml up -d
+  loop: [oxidized, monitoring]
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr"
