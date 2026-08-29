@@ -62,17 +62,24 @@ while IFS=: read -r host _model; do
   rm -f "$plain"
 done < "$ROUTER_DB"
 
+# Publishing is the point of the run: a failed commit/push means the run did
+# NOT complete — count it as failed and leave the last-run metric stale so
+# FullBackupStale fires.
+published=1
 if [ "$changed" = 1 ]; then
-  git add encrypted
-  git -c user.name="netops-full-backup" -c user.email="netops@memhamwan.net" \
-    commit -m "encrypted full-config backup $(date -u +%Y-%m-%d)" >/dev/null
-  git push origin HEAD:encrypted
+  if ! git add encrypted ||
+     ! git -c user.name="netops-full-backup" -c user.email="netops@memhamwan.net" \
+       commit -m "encrypted full-config backup $(date -u +%Y-%m-%d)" >/dev/null ||
+     ! git push origin HEAD:encrypted; then
+    published=0
+    failed+=("github-publish")
+  fi
 fi
 
 # Textfile metrics for node-exporter: "last completed run" (not "all hosts
 # succeeded" — permanently dark sites must not mask a broken timer/script).
 TEXTFILE_DIR=${TEXTFILE_DIR:-/var/lib/netops/node-exporter}
-if [ -d "$TEXTFILE_DIR" ]; then
+if [ "$published" = 1 ] && [ -d "$TEXTFILE_DIR" ]; then
   {
     echo "# HELP netops_full_backup_last_run_timestamp_seconds Unix time the nightly full backup last completed a run."
     echo "# TYPE netops_full_backup_last_run_timestamp_seconds gauge"

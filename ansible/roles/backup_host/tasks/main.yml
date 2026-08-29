@@ -153,6 +153,7 @@
     path: "{{ netops_var }}/secrets/mktxp-password"
     state: absent
 
+# no_log: the bcrypt verifier enables offline guessing; --diff would print it
 - name: Write caddy auth snippet
   ansible.builtin.template:
     src: caddy-auth.snippet.j2
@@ -160,13 +161,16 @@
     owner: "0"
     group: "0"
     mode: "0400"
+  no_log: true
   notify: restart caddy
 
+# no_log: the rendered file holds the fleet API password; --diff would print it
 - name: Render mktxp.conf from inventory + sops
   ansible.builtin.template:
     src: mktxp.conf.j2
     dest: "{{ netops_var }}/mktxp/mktxp.conf"
     mode: "0600"
+  no_log: true
   notify: restart mktxp
 
 - name: Install mktxp exporter settings

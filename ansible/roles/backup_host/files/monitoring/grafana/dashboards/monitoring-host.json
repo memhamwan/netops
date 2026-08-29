@@ -25,7 +25,7 @@
       "id": 3, "type": "timeseries", "title": "Root filesystem free",
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"refId": "A", "expr": "node_filesystem_avail_bytes{mountpoint=\"/host\"}", "legendFormat": "free"}],
+      "targets": [{"refId": "A", "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"}", "legendFormat": "free"}],
       "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 15}}, "overrides": []}
     },
     {

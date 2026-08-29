@@ -31,8 +31,10 @@ groups:
 
   - name: host
     rules:
+      # node-exporter strips --path.rootfs from mountpoint labels: the host
+      # root is mountpoint="/", never "/host"
       - alert: MonitoringHostDiskFull
-        expr: node_filesystem_avail_bytes{mountpoint="/host"} / node_filesystem_size_bytes{mountpoint="/host"} < 0.10
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.10
         for: 15m
         labels:
           severity: page
@@ -48,6 +50,22 @@ groups:
 
   - name: pipeline
     rules:
+      # if blackbox itself dies, probe_success vanishes and NodeDown/SiteDown
+      # *clear* — this is the alert that says "reachability alerting is blind"
+      - alert: BlackboxScrapeFailed
+        expr: avg by (job) (up{job=~"blackbox-icmp|blackbox-http"}) < 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.job }} scrapes failing — reachability alerting is blind"
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "node-exporter down — host disk/thermal/backup alerting is blind"
       # one endpoint carries the whole fleet's RouterOS metrics
       - alert: MktxpDown
         expr: up{job="mktxp"} == 0
@@ -70,6 +88,23 @@ groups:
           severity: page
         annotations:
           summary: "oxidized hasn't fetched any config successfully in >3h"
+      # staleness alerts evaluate empty when the metric was never written
+      # (first run failed, textfile deleted); absent() + a long `for:` is the
+      # startup grace period
+      - alert: FullBackupMetricMissing
+        expr: absent(netops_full_backup_last_run_timestamp_seconds)
+        for: 26h
+        labels:
+          severity: page
+        annotations:
+          summary: "nightly backup metric absent for >26h — pipeline or metrics broken"
+      - alert: OxidizedMetricMissing
+        expr: absent(netops_oxidized_last_success_timestamp_seconds)
+        for: 2h
+        labels:
+          severity: page
+        annotations:
+          summary: "oxidized freshness metric absent for >2h — metrics timer broken"
 
   - name: meta
     rules:
