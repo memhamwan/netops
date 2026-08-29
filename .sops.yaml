@@ -1,0 +1,8 @@
+creation_rules:
+  - path_regex: secrets/.*\.sops\.ya?ml
+    key_groups:
+      - age:
+          # netops shared key (same recipient as memhamwan/netops-secrets)
+          - age1xfngu8m7w7epw797sdnjc746ysuksxevnucr9t4alq82hgzxdagq4u2y4p
+          # turnrye local
+          - age1t5g5hpu4fxr8xmx5xh35w0fus0ryygwkzlx6knm7fwuwj50zse2qj30rxs
