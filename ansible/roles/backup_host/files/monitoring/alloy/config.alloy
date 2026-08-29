@@ -1,0 +1,67 @@
+// RouterOS remote syslog + host journal → Loki.
+// Devices send BSD syslog (rfc3164) to 44.34.128.45:514 (see
+// device-onboarding/add-syslog.sh). Device identity comes from the syslog
+// hostname field, with the sending IP kept as src_ip; MikroTik's
+// "topic1,topic2,severity message" prefix becomes a bounded `topic` label.
+
+loki.source.syslog "routeros" {
+	listener {
+		address                = "0.0.0.0:514"
+		protocol               = "udp"
+		syslog_format          = "rfc3164"
+		use_incoming_timestamp = false
+		labels                 = { job = "routeros-syslog" }
+	}
+	listener {
+		address                = "0.0.0.0:514"
+		protocol               = "tcp"
+		syslog_format          = "rfc3164"
+		use_incoming_timestamp = false
+		labels                 = { job = "routeros-syslog" }
+	}
+	relabel_rules = loki.relabel.syslog.rules
+	forward_to    = [loki.process.routeros.receiver]
+}
+
+loki.relabel "syslog" {
+	forward_to = []
+	rule {
+		source_labels = ["__syslog_message_hostname"]
+		target_label  = "host"
+	}
+	rule {
+		source_labels = ["__syslog_connection_ip_address"]
+		target_label  = "src_ip"
+	}
+	rule {
+		source_labels = ["__syslog_message_severity"]
+		target_label  = "severity"
+	}
+	// RouterOS puts its topic list ("system,error,critical") in the syslog tag
+	rule {
+		source_labels = ["__syslog_message_app_name"]
+		target_label  = "topics"
+	}
+}
+
+loki.process "routeros" {
+	// first topic only, to bound label cardinality
+	stage.regex {
+		expression = "^(?P<topic>[a-z0-9-]+)[, ]"
+	}
+	stage.labels {
+		values = { topic = "" }
+	}
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "host" {
+	labels     = { job = "journald", host = "rpi.sco" }
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

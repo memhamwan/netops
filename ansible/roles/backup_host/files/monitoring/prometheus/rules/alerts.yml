@@ -1,0 +1,59 @@
+groups:
+  - name: reachability
+    rules:
+      - alert: NodeDown
+        expr: probe_success{job="blackbox-icmp"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ if $labels.device }}{{ $labels.device }}{{ else }}{{ $labels.instance }}{{ end }} unreachable"
+          description: "ICMP to {{ $labels.instance }} (site {{ $labels.site }}) failing for 5m"
+      - alert: SiteDown
+        expr: count by (site) (probe_success{job="blackbox-icmp",kind!="ups"} == 0) == count by (site) (probe_success{job="blackbox-icmp",kind!="ups"})
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Site {{ $labels.site }} entirely unreachable"
+          description: "Every monitored device at {{ $labels.site }} is failing ICMP"
+
+  - name: services
+    rules:
+      - alert: ServiceHTTPDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.service }} HTTP check failing"
+          description: "{{ $labels.instance }} not returning 2xx for 5m"
+
+  - name: host
+    rules:
+      - alert: MonitoringHostDiskFull
+        expr: node_filesystem_avail_bytes{mountpoint="/host"} / node_filesystem_size_bytes{mountpoint="/host"} < 0.10
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "rpi.sco root filesystem under 10% free"
+      - alert: MonitoringHostHot
+        expr: node_thermal_zone_temp > 80
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "rpi.sco thermal zone above 80C"
+
+  - name: meta
+    rules:
+      # Always-firing heartbeat. Once Grafana Cloud remote_write is set up, a
+      # cloud-side alert on the *absence* of this series is the dead-man's
+      # switch for "SCO is dark or the monitoring host died".
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Monitoring pipeline heartbeat (always firing by design)"

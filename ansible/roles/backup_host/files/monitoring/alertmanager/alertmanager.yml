@@ -1,0 +1,25 @@
+route:
+  receiver: discord
+  group_by: [alertname, site]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    # heartbeat never notifies locally; it exists for the cloud dead-man's switch
+    - receiver: devnull
+      matchers:
+        - alertname = Watchdog
+
+receivers:
+  - name: discord
+    discord_configs:
+      # webhook URL lives on the host at /var/lib/netops/secrets/, never in git
+      - webhook_url_file: /run/secrets/discord-webhook-url
+        title: '{{ template "discord.default.title" . }}'
+  - name: devnull
+
+inhibit_rules:
+  # a fully-dark site already pages once; silence its per-device alerts
+  - source_matchers: [alertname = SiteDown]
+    target_matchers: [alertname = NodeDown]
+    equal: [site]

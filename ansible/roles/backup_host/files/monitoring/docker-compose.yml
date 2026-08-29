@@ -1,0 +1,135 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+      - --web.external-url=https://prometheus.memhamwan.net
+    volumes:
+      - /var/lib/netops/monitoring/prometheus:/etc/prometheus:ro
+      - /var/lib/netops/prometheus:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  alertmanager:
+    image: quay.io/prometheus/alertmanager:latest
+    container_name: alertmanager
+    restart: unless-stopped
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=https://alertmanager.memhamwan.net
+    volumes:
+      - /var/lib/netops/monitoring/alertmanager:/etc/alertmanager:ro
+      - /var/lib/netops/secrets:/run/secrets:ro
+      - /var/lib/netops/alertmanager:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  blackbox:
+    image: quay.io/prometheus/blackbox-exporter:latest
+    container_name: blackbox
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - --config.file=/etc/blackbox_exporter/blackbox.yml
+    cap_add:
+      - NET_RAW
+    volumes:
+      - /var/lib/netops/monitoring/blackbox:/etc/blackbox_exporter:ro
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/secrets/grafana-admin-password
+      GF_SERVER_ROOT_URL: https://grafana.memhamwan.net
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # hams get read-only dashboards without an account
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - /var/lib/netops/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - /var/lib/netops/monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - /var/lib/netops/secrets:/etc/grafana/secrets:ro
+      - /var/lib/netops/grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: unless-stopped
+    volumes:
+      - /var/lib/netops/monitoring/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/netops/secrets:/run/secrets:ro
+      - /var/lib/netops/caddy/data:/data
+      - /var/lib/netops/caddy/config:/config
+    ports:
+      # public HamWAN/internet-facing entrypoint
+      - "44.34.128.45:80:80"
+      - "44.34.128.45:443:443"
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    user: "10001:10001"
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - /var/lib/netops/monitoring/loki:/etc/loki:ro
+      - /var/lib/netops/loki:/loki
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+    volumes:
+      - /var/lib/netops/monitoring/alloy:/etc/alloy:ro
+      - /var/lib/netops/alloy:/var/lib/alloy/data
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    ports:
+      # device syslog arrives on the HamWAN address
+      - "44.34.128.45:514:514/udp"
+      - "44.34.128.45:514:514"
+
+  mktxp:
+    image: ghcr.io/akpw/mktxp:latest
+    container_name: mktxp
+    restart: unless-stopped
+    user: root
+    volumes:
+      # mktxp.conf is generated on the host by deploy.sh (holds the API password)
+      - /var/lib/netops/mktxp:/etc/mktxp
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      # docker-bridge only: containers scrape via host.docker.internal;
+      # not exposed on the HamWAN LAN
+      - --web.listen-address=172.17.0.1:9100
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
