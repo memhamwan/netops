@@ -14,3 +14,12 @@ data_dirs:
   - {path: mktxp, owner: "0", mode: "0700"}
 # oxidized container uid
 oxidized_uid: "30000"
+
+# Sources allowed to reach the public syslog listener (514) — docker-published
+# ports bypass INPUT, so this is enforced in the DOCKER-USER chain. AMPRNet-wide
+# by default; tighten to the MemHamWAN allocation once confirmed. Spoofed UDP
+# from inside these ranges still gets through — the alloy hostname keep-rule is
+# the second gate.
+syslog_allowed_cidrs:
+  - 44.0.0.0/9
+  - 44.128.0.0/10

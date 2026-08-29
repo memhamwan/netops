@@ -29,7 +29,7 @@ services:
       - --web.external-url=https://alertmanager.memhamwan.net
     volumes:
       - /var/lib/netops/monitoring/alertmanager:/etc/alertmanager:ro
-      - /var/lib/netops/secrets:/run/secrets:ro
+      - /var/lib/netops/secrets/discord-webhook-url:/run/secrets/discord-webhook-url:ro
       - /var/lib/netops/alertmanager:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
@@ -63,7 +63,7 @@ services:
     volumes:
       - /var/lib/netops/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - /var/lib/netops/monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
-      - /var/lib/netops/secrets:/etc/grafana/secrets:ro
+      - /var/lib/netops/secrets/grafana-admin-password:/etc/grafana/secrets/grafana-admin-password:ro
       - /var/lib/netops/grafana:/var/lib/grafana
     ports:
       - "127.0.0.1:3000:3000"
@@ -74,7 +74,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/lib/netops/monitoring/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /var/lib/netops/secrets:/run/secrets:ro
+      - /var/lib/netops/secrets/caddy-auth.snippet:/run/secrets/caddy-auth.snippet:ro
       - /var/lib/netops/caddy/data:/data
       - /var/lib/netops/caddy/config:/config
     ports:

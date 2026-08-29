@@ -25,11 +25,14 @@
           - ':if ([:len [/user group find name=netops-ansible]] = 0) do={/user group add name=netops-ansible policy=api,ssh,ftp,read,write,policy,test}'
       changed_when: true
 
+    # no_log: the command (password included) would otherwise land in ansible
+    # output and CI/terminal logs — and the password stays valid on the device
     - name: Ensure ansible user (random discarded password)
       community.routeros.command:
         commands:
           - ':if ([:len [/user find name=ansible]] = 0) do={/user add name=ansible group=netops-ansible password="{{ lookup("community.general.random_string", length=32, special=false) }}"}'
       changed_when: true
+      no_log: true
 
     - name: Upload ansible public key
       ansible.netcommon.net_put:
@@ -42,3 +45,12 @@
         commands:
           - ':if ([:len [/user ssh-keys find user=ansible]] = 0) do={/user ssh-keys import public-key-file=ansible.pub user=ansible}'
       changed_when: true
+
+    # key auth works from here on; scramble the password again so no value
+    # that ever existed during creation remains valid anywhere
+    - name: Re-scramble ansible password (never logged, never recorded)
+      community.routeros.command:
+        commands:
+          - '/user set [find name=ansible] password="{{ lookup("community.general.random_string", length=32, special=false) }}"'
+      changed_when: true
+      no_log: true

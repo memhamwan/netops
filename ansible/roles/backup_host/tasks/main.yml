@@ -52,8 +52,21 @@
     src: "monitoring/{{ item }}"
     dest: "{{ netops_var }}/monitoring/"
     mode: "0644"
-  loop: [prometheus, alertmanager, blackbox, grafana, caddy, loki, alloy]
+  loop: [prometheus, alertmanager, blackbox, grafana, caddy, loki]
   notify: reload monitoring
+
+- name: Alloy config directory
+  ansible.builtin.file:
+    path: "{{ netops_var }}/monitoring/alloy"
+    state: directory
+    mode: "0755"
+
+- name: Render alloy config from inventory
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: "{{ netops_var }}/monitoring/alloy/config.alloy"
+    mode: "0644"
+  notify: restart alloy
 
 - name: Render blackbox targets from inventory
   ansible.builtin.template:
@@ -72,31 +85,56 @@
     mode: "{{ item.mode | default('0755') }}"
   loop: "{{ data_dirs }}"
 
+# Each secret is owned by (and bind-mounted into) the one container that
+# consumes it, so a compromised container can only read its own credential.
 - name: Secrets directory
   ansible.builtin.file:
     path: "{{ netops_var }}/secrets"
     state: directory
-    mode: "0755"
+    mode: "0750"
 
-- name: Write secrets from sops
+- name: Write grafana admin password
   ansible.builtin.copy:
-    content: "{{ item.value }}"
-    dest: "{{ netops_var }}/secrets/{{ item.name }}"
-    mode: "0644"
-  loop:
-    - {name: grafana-admin-password, value: "{{ grafana_admin_password }}"}
-    - {name: netops-basicauth-password, value: "{{ caddy_basicauth_password }}"}
-    - {name: discord-webhook-url, value: "{{ discord_webhook_url }}"}
-    - {name: mktxp-password, value: "{{ mktxp_password }}"}
-  loop_control:
-    label: "{{ item.name }}"
+    content: "{{ grafana_admin_password }}"
+    dest: "{{ netops_var }}/secrets/grafana-admin-password"
+    owner: "472"
+    group: "472"
+    mode: "0400"
   no_log: true
+  notify: restart grafana
+
+- name: Write discord webhook url
+  ansible.builtin.copy:
+    content: "{{ discord_webhook_url }}"
+    dest: "{{ netops_var }}/secrets/discord-webhook-url"
+    owner: "65534"
+    group: "65534"
+    mode: "0400"
+  no_log: true
+  notify: restart alertmanager
+
+# operator reference only — caddy consumes the bcrypt hash in the snippet
+- name: Write netops basic-auth password
+  ansible.builtin.copy:
+    content: "{{ caddy_basicauth_password }}"
+    dest: "{{ netops_var }}/secrets/netops-basicauth-password"
+    owner: "0"
+    group: "0"
+    mode: "0400"
+  no_log: true
+
+- name: Remove retired mktxp-password working copy (mktxp.conf holds it)
+  ansible.builtin.file:
+    path: "{{ netops_var }}/secrets/mktxp-password"
+    state: absent
 
 - name: Write caddy auth snippet
   ansible.builtin.template:
     src: caddy-auth.snippet.j2
     dest: "{{ netops_var }}/secrets/caddy-auth.snippet"
-    mode: "0644"
+    owner: "0"
+    group: "0"
+    mode: "0400"
   notify: restart caddy
 
 - name: Render mktxp.conf from inventory + sops
@@ -112,6 +150,35 @@
     dest: "{{ netops_var }}/mktxp/_mktxp.conf"
     mode: "0600"
   notify: restart mktxp
+
+- name: Firewall directory
+  ansible.builtin.file:
+    path: "{{ netops_opt }}/firewall"
+    state: directory
+    mode: "0755"
+
+- name: Render DOCKER-USER firewall script
+  ansible.builtin.template:
+    src: netops-firewall.sh.j2
+    dest: "{{ netops_opt }}/firewall/netops-firewall.sh"
+    mode: "0755"
+  notify: reapply firewall
+
+- name: Install firewall unit
+  ansible.builtin.copy:
+    src: firewall/netops-firewall.service
+    dest: /etc/systemd/system/netops-firewall.service
+    mode: "0644"
+  notify:
+    - systemd reload
+    - reapply firewall
+
+- name: Enable firewall unit
+  ansible.builtin.systemd:
+    name: netops-firewall.service
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Install systemd units
   ansible.builtin.copy:

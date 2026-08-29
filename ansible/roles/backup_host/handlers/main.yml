@@ -19,6 +19,24 @@
   ansible.builtin.command: docker restart caddy
   changed_when: true
 
+- name: restart alertmanager
+  ansible.builtin.command: docker restart alertmanager
+  changed_when: true
+
+- name: restart grafana
+  ansible.builtin.command: docker restart grafana
+  changed_when: true
+
+- name: restart alloy
+  ansible.builtin.command: docker restart alloy
+  changed_when: true
+
+- name: reapply firewall
+  ansible.builtin.systemd:
+    name: netops-firewall.service
+    state: restarted
+    daemon_reload: true
+
 - name: reload monitoring
   ansible.builtin.shell: |
     docker compose -f {{ netops_opt }}/monitoring/docker-compose.yml up -d

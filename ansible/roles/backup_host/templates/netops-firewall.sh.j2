@@ -1,0 +1,18 @@
+#!/bin/sh
+# RENDERED from ansible (backup_host role) — do not edit by hand.
+# Docker-published ports bypass the host INPUT chain; filtering has to happen
+# in DOCKER-USER. Restrict the public syslog listener (514) to the allowed
+# source ranges and drop the rest of the internet.
+set -e
+
+iptables -N NETOPS-SYSLOG 2>/dev/null || true
+iptables -F NETOPS-SYSLOG
+{% for cidr in syslog_allowed_cidrs %}
+iptables -A NETOPS-SYSLOG -s {{ cidr }} -j RETURN
+{% endfor %}
+iptables -A NETOPS-SYSLOG -j DROP
+
+for proto in udp tcp; do
+    iptables -C DOCKER-USER -p "$proto" --dport 514 -j NETOPS-SYSLOG 2>/dev/null \
+        || iptables -I DOCKER-USER 1 -p "$proto" --dport 514 -j NETOPS-SYSLOG
+done

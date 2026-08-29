@@ -1,0 +1,12 @@
+[Unit]
+Description=netops DOCKER-USER firewall rules (syslog source restriction)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/netops/firewall/netops-firewall.sh
+
+[Install]
+WantedBy=multi-user.target
