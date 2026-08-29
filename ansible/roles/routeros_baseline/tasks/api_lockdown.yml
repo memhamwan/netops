@@ -1,0 +1,10 @@
+---
+# Imported LAST on purpose: this restricts the API to api_allowed_sources over
+# the API connection itself. Run from a controller outside that list (a laptop
+# without -e api_extra_sources), it cuts off its own transport — by running
+# last, the rest of the baseline is already applied when it does.
+- name: Restrict API to allowed sources (last — can sever this session)
+  community.routeros.api_modify:
+    path: ip service
+    data:
+      - {name: api, disabled: false, address: "{{ api_allowed_sources | join(',') }}"}

@@ -1,34 +1,55 @@
 ---
 # Remote syslog to the collector. RouterOS changed the action schema in 7.18
-# (bsd-syslog= → remote-log-format=), so try new-schema first and fall back.
-# TODO(review): once fleet is 7.18+, drop the rescue branch.
+# (bsd-syslog= → remote-log-format=): try the new schema first, and fall back
+# only when the failure is actually the unknown parameter — auth/connectivity
+# errors must surface instead of silently retrying the old schema.
+# TODO(review): once fleet is 7.18+, drop the fallback.
 - name: Configure remote logging action (7.18+ schema)
-  block:
-    - community.routeros.api_modify:
-        path: system logging action
-        data:
-          - {name: remote, target: remote, remote: "{{ collector_ip }}",
-             remote-port: 514, remote-log-format: syslog}
-  rescue:
-    - name: Configure remote logging action (pre-7.18 schema)
-      community.routeros.api_modify:
-        path: system logging action
-        data:
-          - {name: remote, target: remote, remote: "{{ collector_ip }}",
-             remote-port: 514, bsd-syslog: true}
+  community.routeros.api_modify:
+    path: system logging action
+    data:
+      - {name: remote, target: remote, remote: "{{ collector_ip }}",
+         remote-port: 514, remote-log-format: syslog}
+  register: baseline_logaction
+  ignore_errors: true
+
+- name: Configure remote logging action (pre-7.18 schema)
+  community.routeros.api_modify:
+    path: system logging action
+    data:
+      - {name: remote, target: remote, remote: "{{ collector_ip }}",
+         remote-port: 514, bsd-syslog: true}
+  when:
+    - baseline_logaction is failed
+    - "'remote-log-format' in (baseline_logaction.msg | default(''))"
+
+- name: Fail on unrelated logging-action error
+  ansible.builtin.fail:
+    msg: "logging action failed for a reason other than the 7.18 schema: {{ baseline_logaction.msg | default(baseline_logaction) }}"
+  when:
+    - baseline_logaction is failed
+    - "'remote-log-format' not in (baseline_logaction.msg | default(''))"
 
 - name: Fetch current logging rules
   community.routeros.api:
     path: system logging
   register: baseline_logrules
 
+# the API returns topics as a string or a list depending on version; normalize
+# before comparing, or every run re-adds "missing" rules
+- name: Normalize existing remote-rule topics
+  ansible.builtin.set_fact:
+    baseline_remote_topics: >-
+      {{ (baseline_remote_topics | default([]))
+         + [item if item is string else (item | join(','))] }}
+  loop: >-
+    {{ baseline_logrules.msg
+       | selectattr('action', 'defined') | selectattr('action', 'eq', 'remote')
+       | selectattr('topics', 'defined') | map(attribute='topics') | list }}
+
 - name: Add missing remote logging rules
   community.routeros.api:
     path: system logging
     add: "action=remote topics={{ item }}"
   loop: "{{ syslog_topics }}"
-  when: >-
-    baseline_logrules.msg
-    | selectattr('action', 'defined') | selectattr('action', 'eq', 'remote')
-    | selectattr('topics', 'defined') | selectattr('topics', 'eq', item)
-    | list | length == 0
+  when: item not in (baseline_remote_topics | default([]))

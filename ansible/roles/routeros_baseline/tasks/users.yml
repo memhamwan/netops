@@ -13,14 +13,16 @@
     path: user
   register: baseline_users
 
+# per-account, so a device missing one service account (not yet onboarded for
+# that function) still gets the others corrected
 - name: Correct group membership of service accounts
   community.routeros.api_modify:
     path: user
     data:
-      - {name: oxidized, group: netops-backup-ro}
-      - {name: oxidized-full, group: netops-backup-full}
-      - {name: mktxp, group: mktxp_group}
-      - {name: ansible, group: netops-ansible}
-  when: >-
-    ['oxidized', 'oxidized-full', 'mktxp', 'ansible']
-    | difference(baseline_users.msg | map(attribute='name') | list) | length == 0
+      - {name: "{{ item.name }}", group: "{{ item.group }}"}
+  loop:
+    - {name: oxidized, group: netops-backup-ro}
+    - {name: oxidized-full, group: netops-backup-full}
+    - {name: mktxp, group: mktxp_group}
+    - {name: ansible, group: netops-ansible}
+  when: item.name in (baseline_users.msg | map(attribute='name') | list)

@@ -6,3 +6,5 @@
 - ansible.builtin.import_tasks: ntp.yml
 - ansible.builtin.import_tasks: identity.yml
 - ansible.builtin.import_tasks: audit.yml
+# last: can cut off the play's own API transport — see api_lockdown.yml
+- ansible.builtin.import_tasks: api_lockdown.yml
