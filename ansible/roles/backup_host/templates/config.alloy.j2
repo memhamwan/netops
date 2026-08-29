@@ -4,14 +4,14 @@
 // routeros_baseline logging tasks). Device identity comes from the syslog
 // hostname field, with the sending IP kept as src_ip; MikroTik's
 // "topic1,topic2,severity message" prefix becomes a bounded `topic` label.
-{# accept full FQDNs, short host.site forms, and bare first labels so devices
-   whose identity is not yet FQDN-normalized keep logging #}
+{# accept full FQDNs and short host.site forms only. Identities are never
+   bare hostnames by design — bare names aren't site-unique (seven r1.*), so
+   a bare sender is a misconfiguration and gets dropped, surfacing as missing
+   logs instead of logs mis-attributed to another site. #}
 {% set fleet_names = [] %}
 {% for h in groups['routeros'] | sort %}
-{% set short = h | replace('.memhamwan.net', '') %}
 {% if fleet_names.append(h) %}{% endif %}
-{% if fleet_names.append(short) %}{% endif %}
-{% if fleet_names.append(short.split('.') | first) %}{% endif %}
+{% if fleet_names.append(h | replace('.memhamwan.net', '')) %}{% endif %}
 {% endfor %}
 
 loki.source.syslog "routeros" {
@@ -80,6 +80,11 @@ loki.process "routeros" {
 }
 
 loki.source.journal "host" {
+	// allowlist, not the whole journal: loki is queryable via anonymous
+	// grafana, and sshd/sudo/auth lines expose usernames and worse. Only the
+	// units whose health the dashboards actually track are shipped; the full
+	// journal stays on the host (journalctl).
+	matches    = "_SYSTEMD_UNIT=docker.service _SYSTEMD_UNIT=netops-full-backup.service _SYSTEMD_UNIT=netops-oxidized-metrics.service _SYSTEMD_UNIT=netops-firewall.service"
 	labels     = { job = "journald", host = "rpi.sco" }
 	forward_to = [loki.write.local.receiver]
 }
