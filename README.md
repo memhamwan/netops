@@ -172,3 +172,19 @@ OpenTofu for cloud-side resources (DNS etc.), to be revisited once backup
 history shows real drift/churn patterns. Related planned work: restrict router
 SSH (port 222) reachability now that polling originates on-network, and rotate
 the legacy shared credentials.
+
+**Distributed network services (future design, undecided):** grow the on-network
+hosts (rpi.sco at SCO, meshtastic.hil — another Pi at HIL) into anycast
+providers of basic network services: recursive + authoritative DNS and NTP,
+announced via OSPF (FRR/bird) on the *existing* well-known service addresses
+(e.g. 44.34.132.1 recursive DNS, 44.34.128.181 NTP) so clients never change and
+the nearest healthy instance wins — directly fixing the single-site fragility
+exposed when LEB went dark (fleet-wide NTP drift, dead internal DNS).
+Considerations recorded now: health-coupled route withdrawal (don't announce a
+dead resolver); routing trust — Pis as OSPF speakers should sit behind
+per-neighbor route filters (or a stub area) so a compromised host can't inject
+arbitrary prefixes; and this pattern may reshape the management-access design —
+a set of trusted, OSPF-attached infra hosts acting as bastions/automation
+runners may serve better than a hub-and-spoke WireGuard overlay for operators
+(the wg-mgmt idea), or complement a much smaller one. Decide after the current
+Ansible baseline work lands.
