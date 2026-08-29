@@ -1,15 +1,19 @@
 # routeros_baseline — DRAFT, not yet executed
 
 **Execution gate: no automation-driven router changes without Ryan's PR
-review.** Both playbooks refuse to run without `-e confirm_execution=true`,
-and that flag must not be used until this role has been reviewed. Nothing in
-this role has ever run against a device.
+review.** All three device playbooks (`bootstrap_ansible_user.yml`,
+`onboard_device.yml`, `routeros_baseline.yml`) refuse to run without
+`-e confirm_execution=true`, and that flag must not be used until this role
+has been reviewed. Nothing in these plays has ever run against a device.
 
-Replaces the three `device-onboarding/*.sh` scripts plus accumulated
-hand-fixes with one idempotent role over the RouterOS API (`api_modify`):
+Replaces the `device-onboarding/*.sh` scripts plus accumulated hand-fixes.
+Account *creation* lives in the two SSH-based plays —
+`bootstrap_ansible_user.yml` (the `ansible` automation account) and
+`onboard_device.yml` (`oxidized`, `oxidized-full`, `mktxp`) — while this role
+runs over the RouterOS API (`api_modify`) and only corrects what exists:
 
-- service groups + group membership (creation stays in bootstrap/onboarding —
-  this role can never mint a passwordless account)
+- service groups + group membership (creation stays in the bootstrap/onboarding
+  plays — this role can never mint a passwordless account)
 - service lockdown: telnet/ftp/www/www-ssl/api-ssl/winbox off, ssh:222,
   strong-crypto, MAC-server none, bandwidth-server off; **API stays on**
   restricted to `api_allowed_sources` (diff from old ioc-terraform role)

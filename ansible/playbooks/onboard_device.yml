@@ -1,0 +1,82 @@
+---
+# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+#
+# Device onboarding, run over SSH as an operator account: creates the backup
+# and metrics service accounts (replaces the retired
+# device-onboarding/add-backup-users.sh, plus mktxp which was hand-made):
+#   oxidized       group netops-backup-ro   (ssh,read)            key-only
+#   oxidized-full  group netops-backup-full (ssh,read,sensitive)  key-only
+#   mktxp          group mktxp_group        (api,read)            sops password
+# Idempotent: existing groups/users/keys are left alone; the mktxp password is
+# (re)set from sops every run so device and collector can never drift.
+# Usage (after PR review):
+#   ansible-playbook playbooks/onboard_device.yml -e confirm_execution=true \
+#     -l r1.sco.memhamwan.net [-e ansible_user=turnrye]
+- name: Onboard backup/metrics service accounts on RouterOS
+  hosts: routeros
+  gather_facts: false
+  vars:
+    ansible_user: "{{ lookup('env', 'USER') }}"
+    key_dir: "{{ playbook_dir }}/../roles/routeros_baseline/files"
+  pre_tasks:
+    - name: Execution gate — this play is a draft pending review
+      ansible.builtin.assert:
+        that: confirm_execution | default(false) | bool
+        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+      run_once: true
+
+    - name: Load secrets from sops (mktxp password)
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      delegate_to: localhost
+
+  tasks:
+    - name: Ensure service groups
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user group find name=netops-backup-ro]] = 0) do={/user group add name=netops-backup-ro policy=ssh,read}'
+          - ':if ([:len [/user group find name=netops-backup-full]] = 0) do={/user group add name=netops-backup-full policy=ssh,read,sensitive}'
+          - ':if ([:len [/user group find name=mktxp_group]] = 0) do={/user group add name=mktxp_group policy=api,read}'
+      changed_when: true
+
+    # no_log: the commands embed then-valid passwords
+    - name: Ensure backup users (random discarded passwords)
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user find name=oxidized]] = 0) do={/user add name=oxidized group=netops-backup-ro password="{{ lookup("community.general.random_string", length=32, special=false) }}"}'
+          - ':if ([:len [/user find name=oxidized-full]] = 0) do={/user add name=oxidized-full group=netops-backup-full password="{{ lookup("community.general.random_string", length=32, special=false) }}"}'
+      changed_when: true
+      no_log: true
+
+    - name: Upload backup public keys
+      ansible.netcommon.net_put:
+        src: "{{ key_dir }}/{{ item }}"
+        dest: "/{{ item }}"
+        protocol: scp
+      loop: [oxidized.pub, oxidized-full.pub]
+
+    - name: Import backup ssh keys
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user ssh-keys find user=oxidized]] = 0) do={/user ssh-keys import public-key-file=oxidized.pub user=oxidized}'
+          - ':if ([:len [/user ssh-keys find user=oxidized-full]] = 0) do={/user ssh-keys import public-key-file=oxidized-full.pub user=oxidized-full}'
+      changed_when: true
+
+    # key auth works from here on; scramble again so no password that ever
+    # existed during creation remains valid (same pattern as the bootstrap play)
+    - name: Re-scramble backup user passwords (never logged, never recorded)
+      community.routeros.command:
+        commands:
+          - '/user set [find name=oxidized] password="{{ lookup("community.general.random_string", length=32, special=false) }}"'
+          - '/user set [find name=oxidized-full] password="{{ lookup("community.general.random_string", length=32, special=false) }}"'
+      changed_when: true
+      no_log: true
+
+    # mktxp authenticates over the API with this password
+    - name: Ensure mktxp user with sops password
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user find name=mktxp]] = 0) do={/user add name=mktxp group=mktxp_group password="{{ mktxp_password }}"}'
+          - '/user set [find name=mktxp] password="{{ mktxp_password }}"'
+      changed_when: true
+      no_log: true

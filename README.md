@@ -123,9 +123,11 @@ to rpi.sco.memhamwan.net as your user. On a **fresh** host, add
 `-e ansible_port=22` for the first run: the port-222 sshd drop-in is installed
 by this very play.)
 
-To add a device: add it to the inventory, run the bootstrap/baseline plays
-(DRAFT — pending review, see ansible/roles/routeros_baseline/README.md),
-then deploy the backup host to pick up the new fleet list.
+To add a device: add it to the inventory, run the bootstrap/onboarding plays —
+`bootstrap_ansible_user.yml` (automation account) and `onboard_device.yml`
+(backup + mktxp service accounts) — then the baseline play (all three DRAFT —
+pending review, see ansible/roles/routeros_baseline/README.md), then deploy
+the backup host to pick up the new fleet list.
 
 ## Layout
 
