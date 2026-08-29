@@ -9,7 +9,11 @@
 - name: RouterOS fleet baseline
   hosts: routeros
   gather_facts: false
-  connection: local
+  vars:
+    # play var, not the `connection:` keyword: the inventory's group-level
+    # ansible_connection (network_cli) overrides play keywords, and the api
+    # modules must run on the controller
+    ansible_connection: local
   module_defaults:
     group/community.routeros.api:
       hostname: "{{ inventory_hostname }}"

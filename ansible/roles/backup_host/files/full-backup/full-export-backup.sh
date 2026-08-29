@@ -71,14 +71,15 @@ done < "$ROUTER_DB"
 
 # Publishing is the point of the run: a failed commit/push means the run did
 # NOT complete — count it as failed and leave the last-run metric stale so
-# FullBackupStale fires. The push runs unconditionally (fast no-op when
-# synced): the sha256 cache makes the next run see changed=0, so a
-# committed-but-unpushed backup would otherwise never be retried.
+# FullBackupStale fires. Staging, commit, and push all run unconditionally
+# (fast no-ops when there's nothing new): the sha256 cache makes later runs
+# see changed=0, so ciphertext orphaned by an earlier failed commit — or a
+# commit orphaned by a failed push — would otherwise never be retried.
 published=1
-if [ "$changed" = 1 ]; then
-  if ! git add encrypted ||
-     ! git -c user.name="netops-full-backup" -c user.email="netops@memhamwan.net" \
-       commit -m "encrypted full-config backup $(date -u +%Y-%m-%d)" >/dev/null; then
+git add encrypted || { published=0; failed+=("github-stage"); }
+if ! git diff --cached --quiet; then
+  if ! git -c user.name="netops-full-backup" -c user.email="netops@memhamwan.net" \
+      commit -m "encrypted full-config backup $(date -u +%Y-%m-%d)" >/dev/null; then
     published=0
     failed+=("github-commit")
   fi
