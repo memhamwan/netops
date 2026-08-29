@@ -85,10 +85,10 @@ The backup host keeps working copies in `/var/lib/netops/secrets/`.
 To read them locally:
 
 ```sh
-brew install sops age          # once
-# your age key lives at ~/.config/sops/age/keys.txt; sops on macOS looks in
-# "~/Library/Application Support/sops/age" by default, so point it explicitly:
-export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt   # put in your shell rc
+brew install sops age direnv   # once
+direnv allow                   # once per clone — .envrc sets SOPS_AGE_KEY_FILE
+                               # (sops on macOS otherwise looks in
+                               #  "~/Library/Application Support/sops/age")
 
 sops decrypt secrets/secrets.sops.yaml                  # whole file
 sops decrypt --extract '["grafana_admin_password"]' secrets/secrets.sops.yaml
