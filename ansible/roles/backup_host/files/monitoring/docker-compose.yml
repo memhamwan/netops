@@ -134,5 +134,7 @@ services:
       # not exposed on the HamWAN LAN
       - --web.listen-address=172.17.0.1:9100
       - --path.rootfs=/host
+      # backup/oxidized freshness metrics written by /opt/netops scripts
+      - --collector.textfile.directory=/host/var/lib/netops/node-exporter
     volumes:
       - /:/host:ro,rslave

@@ -1,0 +1,12 @@
+---
+profile: moderate
+
+exclude_paths:
+  - build/
+
+skip_list:
+  - name[casing]  # handler names are lowercase on purpose
+  - command-instead-of-module  # docker/curl invocations are deliberate
+  - no-changed-when  # covered where it matters; RouterOS commands set it
+  - var-naming[no-role-prefix]  # netops_opt/collector_ip etc. predate the rule
+  - yaml[line-length]  # matches .yamllint (line-length disabled)

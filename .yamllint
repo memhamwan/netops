@@ -1,0 +1,16 @@
+---
+extends: default
+
+ignore: |
+  secrets/
+  ansible/build/
+
+rules:
+  line-length: disable
+  document-start: disable
+  truthy:
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  braces:
+    max-spaces-inside: 1

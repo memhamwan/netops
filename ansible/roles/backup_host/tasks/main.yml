@@ -24,7 +24,7 @@
     delete: true
     owner: false
     group: false
-  loop: [oxidized, monitoring, full-backup]
+  loop: [oxidized, monitoring, full-backup, metrics]
 
 - name: Oxidized config directories
   ansible.builtin.file:
@@ -207,17 +207,25 @@
 
 - name: Install systemd units
   ansible.builtin.copy:
-    src: "full-backup/{{ item }}"
-    dest: "/etc/systemd/system/{{ item }}"
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item | basename }}"
     mode: "0644"
-  loop: [netops-full-backup.service, netops-full-backup.timer]
+  loop:
+    - full-backup/netops-full-backup.service
+    - full-backup/netops-full-backup.timer
+    - metrics/netops-oxidized-metrics.service
+    - metrics/netops-oxidized-metrics.timer
   notify: systemd reload
 
-- name: Enable nightly backup timer
+- name: Enable timers (nightly backup, oxidized freshness metrics)
   ansible.builtin.systemd:
-    name: netops-full-backup.timer
+    name: "{{ item }}"
     enabled: true
     state: started
+    daemon_reload: true
+  loop:
+    - netops-full-backup.timer
+    - netops-oxidized-metrics.timer
 
 - name: Ensure both compose stacks are up
   ansible.builtin.command:

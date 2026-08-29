@@ -69,6 +69,21 @@ if [ "$changed" = 1 ]; then
   git push origin HEAD:encrypted
 fi
 
+# Textfile metrics for node-exporter: "last completed run" (not "all hosts
+# succeeded" — permanently dark sites must not mask a broken timer/script).
+TEXTFILE_DIR=${TEXTFILE_DIR:-/var/lib/netops/node-exporter}
+if [ -d "$TEXTFILE_DIR" ]; then
+  {
+    echo "# HELP netops_full_backup_last_run_timestamp_seconds Unix time the nightly full backup last completed a run."
+    echo "# TYPE netops_full_backup_last_run_timestamp_seconds gauge"
+    echo "netops_full_backup_last_run_timestamp_seconds $(date +%s)"
+    echo "# HELP netops_full_backup_failed_hosts Hosts that failed export in the last run."
+    echo "# TYPE netops_full_backup_failed_hosts gauge"
+    echo "netops_full_backup_failed_hosts ${#failed[@]}"
+  } > "$TEXTFILE_DIR/netops-full-backup.prom.$$" \
+    && mv "$TEXTFILE_DIR/netops-full-backup.prom.$$" "$TEXTFILE_DIR/netops-full-backup.prom"
+fi
+
 if [ ${#failed[@]} -gt 0 ]; then
   echo "full-export-backup: FAILED hosts: ${failed[*]}" >&2
   exit 1

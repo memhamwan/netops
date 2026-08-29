@@ -12,6 +12,8 @@ data_dirs:
   - {path: caddy/config, owner: "0"}
   # holds mktxp.conf with the fleet API password — keep it root-only
   - {path: mktxp, owner: "0", mode: "0700"}
+  # node-exporter textfile collector dir (backup/oxidized freshness metrics)
+  - {path: node-exporter, owner: "0"}
 # oxidized container uid
 oxidized_uid: "30000"
 

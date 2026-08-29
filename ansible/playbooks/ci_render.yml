@@ -1,0 +1,46 @@
+---
+# CI/local check: render every backup_host template against the real inventory
+# (dummy secrets), so template errors are caught before a deploy — this is the
+# check that catches things like a label referenced by alerts but never
+# emitted. Output lands in ansible/build/rendered/ (gitignored); CI then runs
+# the real validators (promtool, alloy fmt, YAML parse) over it.
+- name: Render all templates for validation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build/rendered"
+    mktxp_password: dummy
+    caddy_basicauth_user: dummy
+    caddy_basicauth_hash: dummy
+  tasks:
+    - name: Load backup_host defaults (templates reference role vars)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/backup_host/defaults/main.yml"
+
+    - name: Render directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render templates
+      ansible.builtin.template:
+        src: "../roles/backup_host/templates/{{ item }}.j2"
+        dest: "{{ render_dir }}/{{ item }}"
+        mode: "0644"
+      loop:
+        - router.db
+        - icmp-routeros.yml
+        - icmp-infra.yml
+        - mktxp.conf
+        - caddy-auth.snippet
+        - config.alloy
+        - netops-firewall.sh
+
+    - name: Rendered target files parse as YAML lists
+      ansible.builtin.assert:
+        that: lookup('file', render_dir ~ '/' ~ item) | from_yaml | length > 0
+        quiet: true
+      loop:
+        - icmp-routeros.yml
+        - icmp-infra.yml

@@ -1,0 +1,7 @@
+[Unit]
+Description=Write oxidized freshness metrics for node-exporter textfile collector
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/netops/metrics/oxidized-metrics.sh

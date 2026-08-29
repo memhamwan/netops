@@ -1,0 +1,86 @@
+---
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ansible tooling
+        run: pip install ansible-core ansible-lint yamllint
+      - name: Install collections
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+      - name: yamllint
+        run: yamllint .
+      - name: ansible-lint
+        working-directory: ansible
+        run: ansible-lint
+      - name: Playbook syntax check
+        working-directory: ansible
+        run: |
+          for pb in playbooks/*.yml; do
+            ansible-playbook --syntax-check "$pb"
+          done
+
+  validate-configs:
+    runs-on: ubuntu-latest
+    env:
+      PROM_DIR: ansible/roles/backup_host/files/monitoring/prometheus
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ansible tooling
+        run: pip install ansible-core
+      - name: Install collections
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+      - name: Render templates against the real inventory
+        working-directory: ansible
+        run: ansible-playbook playbooks/ci_render.yml
+      - name: promtool check rules
+        run: >
+          docker run --rm -v "$PWD/$PROM_DIR:/etc/prometheus:ro"
+          --entrypoint promtool prom/prometheus:v3.14.0
+          check rules /etc/prometheus/rules/alerts.yml
+      - name: promtool check config
+        run: >
+          docker run --rm -v "$PWD/$PROM_DIR:/etc/prometheus:ro"
+          --entrypoint promtool prom/prometheus:v3.14.0
+          check config /etc/prometheus/prometheus.yml
+      - name: amtool check-config
+        run: >
+          docker run --rm
+          -v "$PWD/ansible/roles/backup_host/files/monitoring/alertmanager:/cfg:ro"
+          --entrypoint amtool quay.io/prometheus/alertmanager:v0.34.0
+          check-config /cfg/alertmanager.yml
+      - name: blackbox config check
+        run: >
+          docker run --rm
+          -v "$PWD/ansible/roles/backup_host/files/monitoring/blackbox:/cfg:ro"
+          quay.io/prometheus/blackbox-exporter:v0.28.0
+          --config.check --config.file=/cfg/blackbox.yml
+      - name: loki config check
+        run: >
+          docker run --rm
+          -v "$PWD/ansible/roles/backup_host/files/monitoring/loki:/cfg:ro"
+          grafana/loki:3.7.7
+          -config.file=/cfg/loki-config.yml -verify-config
+      - name: alloy fmt (rendered config)
+        run: >
+          docker run --rm
+          -v "$PWD/ansible/build/rendered/config.alloy:/cfg/config.alloy:ro"
+          grafana/alloy:v1.19.2 fmt /cfg/config.alloy > /dev/null
+      - name: dashboards are valid JSON
+        run: |
+          for f in ansible/roles/backup_host/files/monitoring/grafana/dashboards/*.json; do
+            jq empty "$f"
+          done
