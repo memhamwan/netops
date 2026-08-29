@@ -30,9 +30,10 @@ scrape_configs:
     static_configs:
       - targets: [mktxp:49090]
 
-  # ICMP reachability of every RouterOS device (and UPSes).
-  # Targets resolve via the Pi; devices absent from public DNS are listed by
-  # IP with a `device` label carrying the hostname (see targets/*.yml).
+  # ICMP reachability of every RouterOS device (and UPSes). Targets are
+  # rendered from the inventory: the recorded IP when there is one (monitoring
+  # must not depend on DNS), hostname otherwise. `device` carries the short
+  # hostname for alerts/dashboards (see targets/*.yml).
   - job_name: blackbox-icmp
     metrics_path: /probe
     params:

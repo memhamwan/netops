@@ -10,5 +10,7 @@ data_dirs:
   - {path: alloy, owner: "0"}
   - {path: caddy/data, owner: "0"}
   - {path: caddy/config, owner: "0"}
+  # holds mktxp.conf with the fleet API password — keep it root-only
+  - {path: mktxp, owner: "0", mode: "0700"}
 # oxidized container uid
 oxidized_uid: "30000"

@@ -39,7 +39,7 @@
       "id": 5, "type": "state-timeline", "title": "Device reachability",
       "gridPos": {"h": 14, "w": 24, "x": 0, "y": 10},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"refId": "A", "expr": "probe_success{job=\"blackbox-icmp\"}", "legendFormat": "{{site}} / {{device}}{{instance}}"}],
+      "targets": [{"refId": "A", "expr": "probe_success{job=\"blackbox-icmp\"}", "legendFormat": "{{site}} / {{device}}"}],
       "options": {"showValue": "never", "legend": {"showLegend": false}},
       "fieldConfig": {"defaults": {"custom": {"fillOpacity": 70}, "mappings": [{"type": "value", "options": {"0": {"text": "down", "color": "red"}, "1": {"text": "up", "color": "green"}}}], "max": 1, "min": 0}, "overrides": []}
     },
@@ -47,7 +47,7 @@
       "id": 6, "type": "timeseries", "title": "ICMP round-trip (reachable devices)",
       "gridPos": {"h": 9, "w": 24, "x": 0, "y": 24},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"refId": "A", "expr": "probe_duration_seconds{job=\"blackbox-icmp\"} and probe_success == 1", "legendFormat": "{{site}} / {{device}}{{instance}}"}],
+      "targets": [{"refId": "A", "expr": "probe_duration_seconds{job=\"blackbox-icmp\"} and probe_success == 1", "legendFormat": "{{site}} / {{device}}"}],
       "options": {"legend": {"showLegend": true, "placement": "right"}},
       "fieldConfig": {"defaults": {"custom": {"fillOpacity": 0, "lineWidth": 1}, "unit": "s"}, "overrides": []}
     }

@@ -7,7 +7,7 @@ groups:
         labels:
           severity: page
         annotations:
-          summary: "{{ if $labels.device }}{{ $labels.device }}{{ else }}{{ $labels.instance }}{{ end }} unreachable"
+          summary: "{{ $labels.device }} unreachable"
           description: "ICMP to {{ $labels.instance }} (site {{ $labels.site }}) failing for 5m"
       - alert: SiteDown
         expr: count by (site) (probe_success{job="blackbox-icmp",kind!="ups"} == 0) == count by (site) (probe_success{job="blackbox-icmp",kind!="ups"})
