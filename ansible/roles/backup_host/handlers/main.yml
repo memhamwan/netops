@@ -23,6 +23,14 @@
   ansible.builtin.command: docker restart alertmanager
   changed_when: true
 
+# GF_SECURITY_ADMIN_PASSWORD__FILE only applies when grafana initializes its
+# database — rotating the sops secret does nothing to an existing install
+# without this explicit reset (runs before the restart handler below)
+- name: reset grafana admin password
+  ansible.builtin.shell: docker exec grafana grafana cli admin reset-admin-password "$(cat {{ netops_var }}/secrets/grafana-admin-password)"
+  changed_when: true
+  no_log: true
+
 - name: restart grafana
   ansible.builtin.command: docker restart grafana
   changed_when: true

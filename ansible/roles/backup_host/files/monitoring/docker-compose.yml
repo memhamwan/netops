@@ -103,6 +103,10 @@ services:
       - run
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
+      # readiness on the compose network so blackbox can probe it (a crashed
+      # alloy would otherwise stop log collection with loki still "ready");
+      # not published to the host
+      - --server.http.listen-addr=0.0.0.0:12345
     volumes:
       - /var/lib/netops/monitoring/alloy:/etc/alloy:ro
       - /var/lib/netops/alloy:/var/lib/alloy/data

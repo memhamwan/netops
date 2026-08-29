@@ -5,3 +5,5 @@
   targets: ["https://grafana.memhamwan.net/api/health"]
 - labels: {site: sco, service: loki}
   targets: ["http://loki:3100/ready"]
+- labels: {site: sco, service: alloy}
+  targets: ["http://alloy:12345/-/ready"]

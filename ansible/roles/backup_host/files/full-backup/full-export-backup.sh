@@ -50,11 +50,16 @@ while IFS=: read -r host _model; do
     newhash=$(sha256sum "$plain" | cut -d' ' -f1)
     oldhash=$(cat "encrypted/$host.sha256" 2>/dev/null || true)
     if [ "$newhash" != "$oldhash" ]; then
+      # encrypt to a temp sibling: redirecting straight onto the ciphertext
+      # truncates it before sops runs, and a failure would leave an empty
+      # file that the unchanged .sha256 prevents from ever being regenerated
       if sops encrypt --input-type binary --output-type binary \
-          --age "$AGE_RECIPIENTS" "$plain" > "encrypted/$host.rsc.sops"; then
+          --age "$AGE_RECIPIENTS" "$plain" > "encrypted/$host.rsc.sops.tmp"; then
+        mv "encrypted/$host.rsc.sops.tmp" "encrypted/$host.rsc.sops"
         echo "$newhash" > "encrypted/$host.sha256"
         changed=1
       else
+        rm -f "encrypted/$host.rsc.sops.tmp"
         failed+=("$host(sops)")
       fi
     fi
@@ -95,6 +100,16 @@ if [ "$published" = 1 ] && [ "$exported" -gt 0 ] && [ -d "$TEXTFILE_DIR" ]; then
     echo "# HELP netops_full_backup_failed_hosts Hosts that failed export in the last run."
     echo "# TYPE netops_full_backup_failed_hosts gauge"
     echo "netops_full_backup_failed_hosts ${#failed[@]}"
+    # per-host series so alerting can join with probe_success and page only
+    # for devices that are reachable yet failing (dark sites are expected)
+    echo "# HELP netops_full_backup_host_failed 1 for each host whose export/encrypt failed in the last run."
+    echo "# TYPE netops_full_backup_host_failed gauge"
+    for f in "${failed[@]}"; do
+      case "$f" in github-*) continue ;; esac
+      short=${f%%(*}
+      short=${short%.memhamwan.net}
+      echo "netops_full_backup_host_failed{device=\"$short\"} 1"
+    done
   } > "$TEXTFILE_DIR/netops-full-backup.prom.$$" \
     && mv "$TEXTFILE_DIR/netops-full-backup.prom.$$" "$TEXTFILE_DIR/netops-full-backup.prom"
 fi

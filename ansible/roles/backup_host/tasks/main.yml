@@ -126,7 +126,10 @@
     group: "472"
     mode: "0400"
   no_log: true
-  notify: restart grafana
+  notify:
+    # the env var is bootstrap-only; rotation needs the explicit cli reset
+    - reset grafana admin password
+    - restart grafana
 
 - name: Write discord webhook url
   ansible.builtin.copy:

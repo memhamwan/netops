@@ -8,7 +8,12 @@ api_allowed_sources: "{{ [collector_ip ~ '/32'] + (api_extra_sources | default([
 ntp_servers:
   - 44.34.128.181        # ntp.leb
   - 44.34.133.3
-  - time.cloudflare.com  # off-network fallback (LEB outage lesson, sec1.sco drift)
+  # off-network fallback (LEB outage lesson, sec1.sco drift) — numeric
+  # anycast addresses for time.cloudflare.com, because the same LEB outage
+  # takes internal DNS down and a hostname fallback would be unresolvable
+  # exactly when it's needed
+  - 162.159.200.1
+  - 162.159.200.123
 
 syslog_topics: [system, error, warning, critical, account]
 

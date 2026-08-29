@@ -81,6 +81,15 @@ groups:
           severity: page
         annotations:
           summary: "nightly encrypted backup hasn't completed a run in >26h"
+      # dark sites fail export every night by design; only page for devices
+      # that answer ICMP yet still can't be backed up (auth/key breakage)
+      - alert: BackupExportFailing
+        expr: (netops_full_backup_host_failed == 1) and on(device) (probe_success{job="blackbox-icmp"} == 1)
+        for: 1h
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.device }} is reachable but its full-config export is failing"
       - alert: OxidizedStale
         expr: time() - netops_oxidized_last_success_timestamp_seconds > 10800
         for: 30m

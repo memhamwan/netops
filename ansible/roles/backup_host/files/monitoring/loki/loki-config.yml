@@ -30,6 +30,14 @@ limits_config:
   retention_period: 720h
   reject_old_samples: true
   reject_old_samples_max_age: 168h
+  # syslog is unauthenticated: a sender spoofing an allowlisted hostname can
+  # inject, but these caps keep it from flooding the SD card. RouterOS lines
+  # are short — the whole fleet's real volume is far below these.
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  per_stream_rate_limit: 2MB
+  per_stream_rate_limit_burst: 8MB
+  max_line_size: 16KB
 
 compactor:
   working_directory: /loki/compactor
