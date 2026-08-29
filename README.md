@@ -64,9 +64,16 @@ switch if we ever want one.
 host's 44net address terminates TLS (automatic Let's Encrypt) and proxies
 - https://grafana.memhamwan.net — anonymous read-only; `admin` login for edits
 - https://prometheus.memhamwan.net, https://alertmanager.memhamwan.net —
-  basic auth (user `netops`, password generated on the host at
+  basic auth (user `netops`, password from sops with a working copy at
   `/var/lib/netops/secrets/netops-basicauth-password`) because neither has
   auth of its own and Alertmanager mutations (silences) must not be public.
+
+The public syslog listener (514) is restricted in the DOCKER-USER chain to
+AMPRNet source ranges (`syslog_allowed_cidrs`), and Alloy drops messages whose
+hostname doesn't look like a fleet device; attempted usernames in RouterOS
+"login failure" lines are redacted at ingestion (anonymous Grafana can query
+Loki, and people type passwords into the username field). Container images are
+pinned to production-verified versions — bump them deliberately.
 
 **Dashboards** are provisioned from
 `ansible/roles/backup_host/files/monitoring/grafana/dashboards/*.json`
@@ -111,7 +118,10 @@ Deploy/refresh the backup host (rpi.sco):
 cd ansible && ansible-playbook playbooks/backup_host.yml
 ```
 
-(Requires sops access — see Secrets. Connects to rpi.sco.memhamwan.net as your user.)
+(Requires sops access — see Secrets — and `rsync` on the workstation. Connects
+to rpi.sco.memhamwan.net as your user. On a **fresh** host, add
+`-e ansible_port=22` for the first run: the port-222 sshd drop-in is installed
+by this very play.)
 
 To add a device: add it to the inventory, run the bootstrap/baseline plays
 (DRAFT — pending review, see ansible/roles/routeros_baseline/README.md),
@@ -157,10 +167,10 @@ sudo chown -R 30000:30000 /var/lib/netops/oxidized /var/lib/netops/ssh
 oxidized-web (browse/search/diff per device) listens on loopback only:
 `ssh -L 8888:127.0.0.1:8888 rpi.sco.memhamwan.net`.
 
-## Monitoring / alerting (next phase)
+## Change notifications (future)
 
 Oxidized hooks fire on every config change (`post_store`); wiring one to a
-notification channel is the intended Phase 2. The GitHub commit history of
+notification channel is still open. The GitHub commit history of
 routeros-config-audit is already a change audit trail.
 
 ## Future direction

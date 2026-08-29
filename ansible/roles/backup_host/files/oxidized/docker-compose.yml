@@ -1,6 +1,6 @@
 services:
   oxidized:
-    image: oxidized/oxidized:latest
+    image: oxidized/oxidized:master-687ed42
     container_name: oxidized
     restart: unless-stopped
     volumes:

@@ -10,11 +10,20 @@
     mode: "0644"
   notify: restart sshd
 
+- name: Host packages (rsync for synchronize, jq for backup metrics)
+  ansible.builtin.apt:
+    name: [rsync, jq]
+    state: present
+
+# synchronize + delete so renamed/removed files don't linger on the host
+# (plain copy never prunes — stale rule files kept loading via rules/*.yml)
 - name: Sync stack code to {{ netops_opt }}
-  ansible.builtin.copy:
-    src: "{{ item }}"
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/{{ item }}"
     dest: "{{ netops_opt }}/"
-    mode: preserve
+    delete: true
+    owner: false
+    group: false
   loop: [oxidized, monitoring, full-backup]
 
 - name: Oxidized config directories
@@ -47,13 +56,29 @@
     mode: "0644"
   notify: restart oxidized
 
-- name: Install monitoring configs
-  ansible.builtin.copy:
-    src: "monitoring/{{ item }}"
+# prometheus reloads over its lifecycle endpoint instead of restarting
+- name: Install prometheus config
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/monitoring/prometheus"
     dest: "{{ netops_var }}/monitoring/"
-    mode: "0644"
-  loop: [prometheus, alertmanager, blackbox, grafana, caddy, loki]
-  notify: reload monitoring
+    delete: true
+    owner: false
+    group: false
+    rsync_opts:
+      # rendered from inventory below — excluded so delete can't prune them
+      - "--exclude=targets/icmp-*.yml"
+  notify: reload prometheus
+
+- name: Install monitoring configs
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/monitoring/{{ item }}"
+    dest: "{{ netops_var }}/monitoring/"
+    delete: true
+    owner: false
+    group: false
+  loop: [alertmanager, blackbox, grafana, caddy, loki]
+  register: monitoring_config_sync
+  notify: restart reconfigured monitoring containers
 
 - name: Alloy config directory
   ansible.builtin.file:
@@ -74,7 +99,7 @@
     dest: "{{ netops_var }}/monitoring/prometheus/targets/{{ item }}"
     mode: "0644"
   loop: [icmp-routeros.yml, icmp-infra.yml]
-  notify: reload monitoring
+  notify: reload prometheus
 
 - name: Create data directories with container ownership
   ansible.builtin.file:

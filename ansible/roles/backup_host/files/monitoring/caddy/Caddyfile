@@ -1,7 +1,8 @@
 # Public (44net) entrypoint for the netops apps, with automatic Let's Encrypt.
 # Grafana handles its own auth (anonymous = read-only Viewer); Prometheus and
 # Alertmanager have none, so they sit behind basic auth — credentials in
-# /var/lib/netops/secrets/caddy-auth.snippet (see deploy.sh), never in git.
+# /var/lib/netops/secrets/caddy-auth.snippet, rendered from sops by the
+# backup_host role, never in git.
 {
 	email ryan@turnrye.com
 }

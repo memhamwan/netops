@@ -37,9 +37,16 @@
     state: restarted
     daemon_reload: true
 
-- name: reload monitoring
-  ansible.builtin.shell: |
-    docker compose -f {{ netops_opt }}/monitoring/docker-compose.yml up -d
-    docker restart grafana
-    curl -s -X POST http://127.0.0.1:9090/-/reload || true
+- name: reload prometheus
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/-/reload
+    method: POST
+
+# only bounce the containers whose config dir actually changed — a
+# prometheus-targets change must not drop grafana viewer sessions
+- name: restart reconfigured monitoring containers
+  ansible.builtin.command: docker restart {{ item.item }}
+  loop: "{{ monitoring_config_sync.results | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
   changed_when: true
