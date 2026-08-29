@@ -77,7 +77,8 @@ pinned to production-verified versions — bump them deliberately.
 
 **Dashboards** are provisioned from
 `ansible/roles/backup_host/files/monitoring/grafana/dashboards/*.json`
-(folder "MemHamWAN": Network Overview, Monitoring Host). They are file-managed:
+(folder "MemHamWAN": Network Overview, Monitoring Host, Device Logs, and the
+community MikroTik/mktxp deep-dive). They are file-managed:
 edit the JSON here and redeploy — UI edits are not persisted. To author in the
 UI first, copy the dashboard, edit, then export JSON back into the repo.
 

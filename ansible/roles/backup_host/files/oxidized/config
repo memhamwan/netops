@@ -1,6 +1,6 @@
 ---
 # Oxidized configuration for the MemHamWAN RouterOS fleet.
-# Deployed to /var/lib/netops/oxidized/config on the backup host (see deploy.sh).
+# Deployed to /var/lib/netops/oxidized/config by the backup_host role.
 # Auth: SSH publickey as device user "oxidized" (read-only, no sensitive policy),
 # key at /home/oxidized/.ssh/id_ed25519 inside the container.
 # Sanitized exports only: remove_secret makes the routeros model run

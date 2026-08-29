@@ -34,6 +34,7 @@ chmod 700 "$tmpdir"
 trap 'rm -rf "$tmpdir"' EXIT
 
 changed=0
+exported=0
 failed=()
 while IFS=: read -r host _model; do
   [ -z "$host" ] && continue
@@ -43,6 +44,7 @@ while IFS=: read -r host _model; do
       -o StrictHostKeyChecking=accept-new \
       "$SSH_USER@$host" '/export show-sensitive' 2>/dev/null \
       | tr -d '\r' > "$plain" && [ -s "$plain" ]; then
+    exported=$((exported + 1))
     # drop the volatile "# <date> by RouterOS x.y" header so hashes are stable
     sed -i -E '1{/^# /d}' "$plain"
     newhash=$(sha256sum "$plain" | cut -d' ' -f1)
@@ -64,22 +66,28 @@ done < "$ROUTER_DB"
 
 # Publishing is the point of the run: a failed commit/push means the run did
 # NOT complete — count it as failed and leave the last-run metric stale so
-# FullBackupStale fires.
+# FullBackupStale fires. The push runs unconditionally (fast no-op when
+# synced): the sha256 cache makes the next run see changed=0, so a
+# committed-but-unpushed backup would otherwise never be retried.
 published=1
 if [ "$changed" = 1 ]; then
   if ! git add encrypted ||
      ! git -c user.name="netops-full-backup" -c user.email="netops@memhamwan.net" \
-       commit -m "encrypted full-config backup $(date -u +%Y-%m-%d)" >/dev/null ||
-     ! git push origin HEAD:encrypted; then
+       commit -m "encrypted full-config backup $(date -u +%Y-%m-%d)" >/dev/null; then
     published=0
-    failed+=("github-publish")
+    failed+=("github-commit")
   fi
 fi
+if ! git push origin HEAD:encrypted; then
+  published=0
+  failed+=("github-publish")
+fi
 
-# Textfile metrics for node-exporter: "last completed run" (not "all hosts
-# succeeded" — permanently dark sites must not mask a broken timer/script).
+# Textfile metrics for node-exporter: "last completed run", advanced only when
+# publication worked and at least one export succeeded — fleet-wide SSH/auth
+# breakage must go stale, while permanently dark sites must not mask health.
 TEXTFILE_DIR=${TEXTFILE_DIR:-/var/lib/netops/node-exporter}
-if [ "$published" = 1 ] && [ -d "$TEXTFILE_DIR" ]; then
+if [ "$published" = 1 ] && [ "$exported" -gt 0 ] && [ -d "$TEXTFILE_DIR" ]; then
   {
     echo "# HELP netops_full_backup_last_run_timestamp_seconds Unix time the nightly full backup last completed a run."
     echo "# TYPE netops_full_backup_last_run_timestamp_seconds gauge"

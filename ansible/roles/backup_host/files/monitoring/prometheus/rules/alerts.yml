@@ -88,6 +88,15 @@ groups:
           severity: page
         annotations:
           summary: "oxidized hasn't fetched any config successfully in >3h"
+      # fetches can stay green while the nodes_done push hook fails; this
+      # watches local devices.git HEAD vs the GitHub main branch
+      - alert: OxidizedUnpublished
+        expr: netops_oxidized_pushed == 0
+        for: 2h
+        labels:
+          severity: page
+        annotations:
+          summary: "oxidized backups not reaching GitHub for >2h (push hook or network)"
       # staleness alerts evaluate empty when the metric was never written
       # (first run failed, textfile deleted); absent() + a long `for:` is the
       # startup grace period

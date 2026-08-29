@@ -40,7 +40,7 @@ loki.relabel "syslog" {
 	// senders can't mint arbitrary label values (loki cardinality)
 	rule {
 		source_labels = ["__syslog_message_hostname"]
-		regex         = "(?i)({{ fleet_names | unique | join('|') }})"
+		regex         = "(?i)({{ fleet_names | unique | map('replace', '.', '\\\\.') | join('|') }})"
 		action        = "keep"
 	}
 	rule {
@@ -83,10 +83,25 @@ loki.source.journal "host" {
 	// allowlist, not the whole journal: loki is queryable via anonymous
 	// grafana, and sshd/sudo/auth lines expose usernames and worse. Only the
 	// units whose health the dashboards actually track are shipped; the full
-	// journal stays on the host (journalctl).
-	matches    = "_SYSTEMD_UNIT=docker.service _SYSTEMD_UNIT=netops-full-backup.service _SYSTEMD_UNIT=netops-oxidized-metrics.service _SYSTEMD_UNIT=netops-firewall.service"
-	labels     = { job = "journald", host = "rpi.sco" }
-	forward_to = [loki.write.local.receiver]
+	// journal stays on the host (journalctl). Filtered via relabel keep —
+	// `matches` can't express OR (space-separated matches AND together, and
+	// alloy doesn't support journalctl's `+` disjunction).
+	relabel_rules = loki.relabel.journal.rules
+	labels        = { job = "journald", host = "rpi.sco" }
+	forward_to    = [loki.write.local.receiver]
+}
+
+loki.relabel "journal" {
+	forward_to = []
+	rule {
+		source_labels = ["__journal__systemd_unit"]
+		regex         = "(docker|netops-full-backup|netops-oxidized-metrics|netops-firewall)\\.service"
+		action        = "keep"
+	}
+	rule {
+		source_labels = ["__journal__systemd_unit"]
+		target_label  = "unit"
+	}
 }
 
 loki.write "local" {

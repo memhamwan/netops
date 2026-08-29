@@ -26,7 +26,16 @@ runs over the RouterOS API (`api_modify`) and only corrects what exists:
 
 1. `api_modify` path coverage varies by collection/ROS version — the first
    `--check --diff` run (post-review) is the real validation pass.
-2. Plaintext API on 8728 (also used by mktxp today): consider api-ssl + certs.
+2. Plaintext API on 8728 carries the write-capable `ansible` credential (and
+   mktxp's read-only one) unencrypted across radio/routed links; the source
+   ACL doesn't stop passive interception. Proposed migration, in order, for
+   review: (a) onboarding play generates a per-device self-signed cert and
+   enables api-ssl (8729) alongside 8728; (b) baseline transport and mktxp
+   (`use_ssl`) move to 8729 — encrypted, initially without cert validation,
+   which already defeats passive capture; (c) plaintext 8728 is disabled
+   fleet-wide; (d) later, a proper internal CA replaces self-signed +
+   no-validate to close the MITM gap. Not implemented in this draft — needs
+   Ryan's sign-off on the cert strategy first.
 3. RouterOS `/user ssh-keys` cannot be managed via API — key imports stay in
    the SSH-based bootstrap play.
 4. romon and OSPF auth intentionally not touched yet (`ospf_auth` will be a
