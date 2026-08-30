@@ -54,7 +54,7 @@
       community.routeros.command:
         commands:
           - ':if ([:len [/certificate find name=api-ssl]] = 0) do={/certificate add name=api-ssl common-name={{ inventory_hostname }} key-size=2048 days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server; /certificate sign api-ssl}'
-          - '/ip service set api-ssl certificate=api-ssl disabled=no'
+          - '/ip service set api-ssl certificate=api-ssl port=8729 disabled=no'
       changed_when: true
 
     # no_log: the commands embed then-valid passwords

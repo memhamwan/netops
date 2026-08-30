@@ -13,5 +13,5 @@
   community.routeros.api_modify:
     path: ip service
     data:
-      - {name: api-ssl, disabled: false, certificate: api-ssl, address: "{{ api_allowed_sources | join(',') }}"}
+      - {name: api-ssl, disabled: false, port: 8729, certificate: api-ssl, address: "{{ api_allowed_sources | join(',') }}"}
       - {name: api, disabled: true}

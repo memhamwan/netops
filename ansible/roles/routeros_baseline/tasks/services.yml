@@ -28,11 +28,11 @@
     data:
       - {enabled: false, authenticate: false}
 
-# NOTE(review): the old role also set mac-server / mac-winbox / neighbor
-# discovery to none. RoMON (which Ryan actively uses for L2 discovery) is a
-# separate subsystem and unaffected, but neighbor discovery-off makes
-# /ip neighbor useless for topology checks — kept here matching the old
-# posture; flag if you want discovery limited to an interface list instead.
+# NOTE(review): the old role also disabled neighbor discovery fleet-wide.
+# That is deliberately NOT done here — only the MAC server/winbox
+# restrictions below are applied; neighbor discovery is untouched (README
+# open question: disable vs restrict to an interface list). RoMON, used for
+# L2 discovery, is a separate subsystem and unaffected either way.
 - name: Restrict MAC server
   community.routeros.api_modify:
     path: tool mac-server
