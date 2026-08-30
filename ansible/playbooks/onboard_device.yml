@@ -91,6 +91,11 @@
         protocol: scp
       loop: [oxidized.pub, oxidized-full.pub]
 
+    # RouterOS wedges the CLI channel after an SCP transfer on the same
+    # persistent connection — see the same reset in bootstrap_ansible_user.yml
+    - name: Reset connection after file transfer
+      ansible.builtin.meta: reset_connection
+
     # rotation: drop existing keys so the import below re-runs with the new ones
     - name: Remove existing backup ssh keys (rotate_backup_keys)
       community.routeros.command:

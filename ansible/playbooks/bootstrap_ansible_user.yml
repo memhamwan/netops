@@ -77,6 +77,12 @@
         dest: /ansible.pub
         protocol: scp
 
+    # RouterOS wedges the CLI channel after an SCP transfer on the same
+    # persistent connection — the next task would die with "Unable to decode
+    # JSON from response to get_capabilities()". Start a fresh connection.
+    - name: Reset connection after file transfer
+      ansible.builtin.meta: reset_connection
+
     - name: Import ansible ssh key
       community.routeros.command:
         commands:
