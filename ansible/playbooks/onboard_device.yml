@@ -84,17 +84,16 @@
       changed_when: true
       no_log: true
 
+    # plain scp from the controller, NOT net_put — see the identical comment
+    # in bootstrap_ansible_user.yml (net_put wedges the network_cli session)
     - name: Upload backup public keys
-      ansible.netcommon.net_put:
-        src: "{{ key_dir }}/{{ item }}"
-        dest: "/{{ item }}"
-        protocol: scp
+      ansible.builtin.command: >-
+        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+        {{ key_dir }}/{{ item }}
+        {{ ansible_user }}@{{ inventory_hostname }}:/{{ item }}
+      delegate_to: localhost
+      changed_when: true
       loop: [oxidized.pub, oxidized-full.pub]
-
-    # RouterOS wedges the CLI channel after an SCP transfer on the same
-    # persistent connection — see the same reset in bootstrap_ansible_user.yml
-    - name: Reset connection after file transfer
-      ansible.builtin.meta: reset_connection
 
     # rotation: drop existing keys so the import below re-runs with the new ones
     - name: Remove existing backup ssh keys (rotate_backup_keys)

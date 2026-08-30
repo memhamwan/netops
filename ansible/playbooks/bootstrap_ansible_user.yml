@@ -71,17 +71,19 @@
           - '/user set [find name=ansible] group=netops-ansible'
       changed_when: true
 
+    # plain scp from the controller, NOT net_put: net_put rides the
+    # network_cli persistent connection, and RouterOS wedges that session
+    # after an SCP channel closes (meta: reset_connection then leaves a
+    # stale socket — hit live on sec3.sco). A separate scp process leaves
+    # the CLI session untouched. -O forces the scp protocol (no sftp on
+    # RouterOS); host trust comes from the same seeded known_hosts.
     - name: Upload ansible public key
-      ansible.netcommon.net_put:
-        src: "{{ playbook_dir }}/../roles/routeros_baseline/files/ansible.pub"
-        dest: /ansible.pub
-        protocol: scp
-
-    # RouterOS wedges the CLI channel after an SCP transfer on the same
-    # persistent connection — the next task would die with "Unable to decode
-    # JSON from response to get_capabilities()". Start a fresh connection.
-    - name: Reset connection after file transfer
-      ansible.builtin.meta: reset_connection
+      ansible.builtin.command: >-
+        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+        {{ playbook_dir }}/../roles/routeros_baseline/files/ansible.pub
+        {{ ansible_user }}@{{ inventory_hostname }}:/ansible.pub
+      delegate_to: localhost
+      changed_when: true
 
     - name: Import ansible ssh key
       community.routeros.command:
