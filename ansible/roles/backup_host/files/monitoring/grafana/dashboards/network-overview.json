@@ -11,7 +11,7 @@
       "id": 1, "type": "stat", "title": "Devices up",
       "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"refId": "A", "expr": "count(probe_success{job=\"blackbox-icmp\",kind!=\"ups\"} == 1)"}],
+      "targets": [{"refId": "A", "expr": "count(probe_success{job=\"blackbox-icmp\",kind!=\"ups\"} == 1) or vector(0)"}],
       "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "green"}, "unit": "none"}, "overrides": []}
     },
     {

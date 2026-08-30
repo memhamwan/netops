@@ -35,7 +35,7 @@
       "gridPos": {"h": 7, "w": 12, "x": 12, "y": 0},
       "datasource": {"type": "loki", "uid": "loki"},
       "targets": [
-        {"refId": "A", "expr": "sum by (host) (count_over_time({job=\"routeros-syslog\"} |= \"login failure\" [$__auto]))", "legendFormat": "{{host}} failures"}
+        {"refId": "A", "expr": "sum by (host) (count_over_time({job=\"routeros-syslog\", host=~\"$host\"} |= \"login failure\" [$__auto]))", "legendFormat": "{{host}} failures"}
       ],
       "fieldConfig": {"defaults": {"custom": {"fillOpacity": 30, "drawStyle": "bars", "stacking": {"mode": "normal"}}, "color": {"mode": "palette-classic"}}, "overrides": []}
     },

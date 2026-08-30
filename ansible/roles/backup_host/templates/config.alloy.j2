@@ -62,13 +62,13 @@ loki.relabel "syslog" {
 
 loki.process "routeros" {
 	// people fat-finger passwords into the username field, and anonymous
-	// grafana can query loki — never ship attempted usernames.
-	// stage.replace substitutes ONLY the capture group (per the alloy docs
-	// example: "password xyz" → "password *****"), so the "login failure"
-	// phrase survives and dashboard |= filters on it keep matching
+	// grafana can query loki — never ship attempted usernames. No capture
+	// group on purpose: the whole match is replaced with the full phrase,
+	// which behaves identically under either reading of stage.replace
+	// semantics, and dashboard |= "login failure" filters keep matching
 	stage.replace {
-		expression = "login failure for user (\\S+)"
-		replace    = "<redacted>"
+		expression = "login failure for user \\S+"
+		replace    = "login failure for user <redacted>"
 	}
 	// first topic only, and only from a fixed vocabulary, so an
 	// unauthenticated sender can't mint arbitrary label values (streams);
