@@ -119,9 +119,12 @@ venv — never in brew/system pythons, so there's no guessing which of a mac's
 several interpreters ansible will use. direnv puts it on PATH automatically.
 
 ```sh
-brew install uv sops age direnv   # once per machine
+brew install uv sops age direnv libssh   # once per machine
 cd ansible
-uv venv && uv pip install -r requirements.txt
+uv venv
+# flags: ansible-pylibssh has no arm64 wheels and builds against brew's libssh
+CFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib" \
+  uv pip install -r requirements.txt
 ansible-galaxy collection install -r requirements.yml
 cd .. && direnv allow
 ```

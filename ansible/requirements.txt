@@ -7,6 +7,13 @@
 # runtime
 ansible-core~=2.21.0
 librouteros~=4.0  # RouterOS API modules run on the controller (connection: local)
+# network_cli's SSH transport (bootstrap/onboarding plays). No arm64 macOS
+# wheels upstream — apple-silicon builds from source against brew's libssh:
+#   brew install libssh
+#   CFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib" \
+#     uv pip install -r requirements.txt
+# (linux/CI installs prebuilt manylinux wheels, no extra steps)
+ansible-pylibssh~=1.4
 
 # lint/CI (same versions locally and in the workflow)
 ansible-lint>=25
