@@ -74,6 +74,18 @@
     # and errors inside do={} blocks are SILENT — hence the
     # recreate-unless-good guard (self-heals partial earlier runs), the
     # bounded wait, and the explicit verification task below.
+    # devices without NTP sign certs with an epoch-era clock (seen live:
+    # notBefore 1971). Harmless while clients skip validation, but once the
+    # baseline lands NTP and clocks sync, rotate to get sane validity dates:
+    #   -e rotate_api_cert=true
+    - name: Remove api-ssl certificate for regeneration (rotate_api_cert)
+      community.routeros.command:
+        commands:
+          - '/ip service set api-ssl certificate=none'
+          - '/certificate remove [find name=api-ssl]'
+      changed_when: true
+      when: rotate_api_cert | default(false) | bool
+
     - name: Ensure api-ssl certificate (signed, full usage)
       community.routeros.command:
         commands:

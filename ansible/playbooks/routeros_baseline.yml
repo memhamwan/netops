@@ -33,23 +33,26 @@
       run_once: true
 
     # the api modules run on the controller (connection: local) and need
-    # librouteros importable by the local python
+    # librouteros importable by the interpreter ansible discovers — which is
+    # NOT necessarily `python3` on PATH (macs routinely have apple, homebrew,
+    # and ansible-bundled pythons side by side). python_requirements_info
+    # runs under the same discovered interpreter as the api modules and
+    # reports its exact path for the error message.
     - name: Preflight — check for librouteros
-      ansible.builtin.command: python3 -c "import librouteros"
+      community.general.python_requirements_info:
+        dependencies: [librouteros]
       delegate_to: localhost
       run_once: true
-      changed_when: false
-      failed_when: false
       register: librouteros_check
 
     - name: Preflight — librouteros required on the controller
       ansible.builtin.assert:
-        that: librouteros_check.rc == 0
+        that: "'librouteros' not in librouteros_check.not_found"
         fail_msg: >-
-          librouteros is not importable by the controller's python. Install it
-          for the interpreter ansible discovers locally, e.g.
-          `python3 -m pip install --user --break-system-packages librouteros`
-          (homebrew pythons are PEP 668 externally-managed).
+          librouteros is not importable by {{ librouteros_check.python }} —
+          the interpreter ansible runs modules under. Install it for exactly
+          that interpreter:
+          `{{ librouteros_check.python }} -m pip install --break-system-packages librouteros`
       run_once: true
     - name: Load secrets from sops
       community.sops.load_vars:
