@@ -3,12 +3,67 @@
 # (M1): no frr, no dummy interface, nothing announced. The health timer is
 # installed either way and simply reports health instead of acting on it.
 
-- name: Anycast disabled — nothing is announced
-  ansible.builtin.debug:
-    msg: >-
-      anycast_enabled=false: unbound/chrony serve on this host's own address
-      only. No dummy interface, no frr, no OSPF adjacency, no announcement.
+# Anycast disabled (M1, the default). This is also the reconcile path *back*
+# from a prior enabled (M2+) deploy: merely skipping the enable block below is
+# not enough — frr, the dummy interface, and the NM drop-in would keep
+# announcing every healthy service /32 while this run reports "nothing is
+# announced". Everything here is guarded on what a prior run left behind, so a
+# host that was never enabled is a pure no-op.
+- name: Anycast disabled — tear down any prior announcement
   when: not (anycast_enabled | bool)
+  block:
+    - name: Anycast disabled — nothing is announced
+      ansible.builtin.debug:
+        msg: >-
+          anycast_enabled=false: unbound/chrony serve on this host's own
+          address only. frr and the dummy interface are removed below; no
+          OSPF adjacency, no announcement.
+
+    - name: Is frr installed?
+      ansible.builtin.stat:
+        path: /lib/systemd/system/frr.service
+      register: frr_unit
+
+    - name: Is the dummy interface unit present?
+      ansible.builtin.stat:
+        path: /etc/systemd/system/netops-anycast-link.service
+      register: anycast_link_unit
+
+    # Stop OSPF first: with frr down the connected /32s stop being
+    # redistributed before the interface carrying them is removed, so a client
+    # never sees an address advertised with no host behind it. frr.conf (which
+    # holds the OSPF key) is left in place — it is re-rendered on re-enable and
+    # a disabled unit announces nothing regardless.
+    - name: Stop and disable frr
+      ansible.builtin.systemd:
+        name: frr
+        state: stopped
+        enabled: false
+      when: frr_unit.stat.exists
+
+    # This unit's ExecStop runs `ip link del`, which takes the service /32s
+    # with the interface.
+    - name: Stop and disable the dummy interface unit
+      ansible.builtin.systemd:
+        name: netops-anycast-link.service
+        state: stopped
+        enabled: false
+      when: anycast_link_unit.stat.exists
+
+    - name: Remove the dummy interface unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/netops-anycast-link.service
+        state: absent
+      notify: systemd reload
+
+    # Guarded on nm_dir like the create task, so the reload handler only fires
+    # where NetworkManager actually exists.
+    - name: Remove the NetworkManager unmanaged-device drop-in
+      ansible.builtin.file:
+        path: /etc/NetworkManager/conf.d/91-netops-anycast.conf
+        state: absent
+      when: nm_dir.stat.isdir | default(false)
+      notify: reload networkmanager
 
 - name: Anycast enabled
   when: anycast_enabled | bool

@@ -101,6 +101,7 @@ tests:
               description: "Internal-zone probe to 44.34.128.45 failing — anycast redundancy reduced"
 
   # ── Service healthy but the anycast address does not answer: routing ──
+  # netops_anycast_enabled=1 present, so the M1 gate lets the page through.
   - interval: 1m
     name: anycast address unreachable while instance healthy
     input_series:
@@ -108,6 +109,8 @@ tests:
         values: "1+0x30"
       - series: 'probe_success{job="blackbox-dns-internal",kind="anycast",host="anycast",instance="44.34.132.1"}'
         values: "0+0x30"
+      - series: 'netops_anycast_enabled{host="rpi.sco",instance="44.34.128.45"}'
+        values: "1+0x30"
     alert_rule_test:
       - eval_time: 10m
         alertname: AnycastAddressUnreachable
@@ -121,6 +124,24 @@ tests:
             exp_annotations:
               summary: "Anycast DNS 44.34.132.1 unreachable while an instance is healthy"
               description: "Routing/announcement problem: the service is up but the anycast address does not answer"
+
+  # ── M1: the anycast address is scraped but never announced, so an
+  # unreachable anycast probe with a healthy instance must NOT page while
+  # anycast is disabled (netops_anycast_enabled=0). This is the intended M1
+  # state — the regression the gate exists to prevent. ──
+  - interval: 1m
+    name: anycast unreachable is suppressed while anycast is disabled
+    input_series:
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="rpi.sco",instance="44.34.128.45"}'
+        values: "1+0x30"
+      - series: 'probe_success{job="blackbox-dns-internal",kind="anycast",host="anycast",instance="44.34.132.1"}'
+        values: "0+0x30"
+      - series: 'netops_anycast_enabled{host="rpi.sco",instance="44.34.128.45"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastAddressUnreachable
+        exp_alerts: []
 
   # ── Split brain: the legacy LEB resolver answers an anycast address ──
   - interval: 1m
@@ -260,6 +281,37 @@ tests:
             exp_annotations:
               summary: "Announcement state disagrees with health on rpi.sco"
               description: "44.34.132.1 announced=0 while the health check says otherwise"
+
+  # ── NTP mismatch: pins the (instance, service) match. With the old
+  # service="dns"-hard-coded rule this could never fire, so an NTP address
+  # announced while chrony is unsynchronised went unnoticed. ──
+  - interval: 1m
+    name: ntp announced while unhealthy
+    input_series:
+      - series: 'netops_anycast_announced{service="ntp",ip="44.34.132.3",host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+      - series: 'netops_service_healthy{service="ntp",host="rpi.sco",instance="a"}'
+        values: "0+0x30"
+      # A healthy DNS pair on the same host must not bleed into the NTP match.
+      - series: 'netops_anycast_announced{service="dns",ip="44.34.132.1",host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+      - series: 'netops_service_healthy{service="dns",host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+      - series: 'netops_anycast_enabled{host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastStateMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              service: ntp
+              ip: 44.34.132.3
+              host: rpi.sco
+              instance: a
+            exp_annotations:
+              summary: "Announcement state disagrees with health on rpi.sco"
+              description: "44.34.132.3 announced=1 while the health check says otherwise"
 
   # ── M1: with anycast off, a stale address must not raise the mismatch ──
   - interval: 1m

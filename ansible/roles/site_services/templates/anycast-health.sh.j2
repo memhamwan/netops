@@ -183,7 +183,16 @@ for _ip in $DNS_IPS; do
   # Unreachable is a routing/health problem the other alerts already cover;
   # don't also raise the split-brain alert for it.
   [ "$origin" = "unreachable" ] && known=1
-  echo "netops_anycast_origin_known{ip=\"$_ip\",origin=\"$origin\"} $known" >> "$tmp"
+  # $origin is attacker-controlled — it is whatever answers the anycast
+  # address, i.e. exactly the responder this check exists to distrust. Escape
+  # it for the Prometheus exposition format before it becomes a label value: a
+  # stray backslash (or quote) would otherwise break the textfile and silently
+  # take EVERY metric in it offline, including this split-brain signal. `"` is
+  # already stripped above; escape `\` (backslash first) and drop any newline.
+  # printf, not echo, so the value is emitted literally rather than re-parsed.
+  _origin_label=$(printf '%s' "$origin" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n')
+  printf 'netops_anycast_origin_known{ip="%s",origin="%s"} %s\n' \
+    "$_ip" "$_origin_label" "$known" >> "$tmp"
 done
 
 # Reciprocal peer view: each service host checks the others by their own
