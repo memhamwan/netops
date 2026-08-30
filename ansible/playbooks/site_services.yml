@@ -12,11 +12,15 @@
   become: true
   gather_facts: false
   pre_tasks:
-    - name: Load secrets from sops
+    # Only the anycast path needs a secret (the OSPF key), so M1 deploys
+    # without sops access at all — no age key, no direnv, nothing to set up
+    # beyond ssh. That keeps the low-risk step genuinely low-friction.
+    - name: Load secrets from sops (only anycast needs the OSPF key)
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
       become: false
+      when: anycast_enabled | default(false) | bool
 
     - name: Load extra DNS records
       ansible.builtin.include_vars:

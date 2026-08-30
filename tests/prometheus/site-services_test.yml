@@ -66,6 +66,12 @@ tests:
             exp_annotations:
               summary: "No healthy internal resolver anywhere"
               description: "Every site service host is failing the internal-zone DNS probe"
+      # A total outage must NOT also raise per-instance "redundancy reduced"
+      # warnings — that description is false when nothing is left to serve,
+      # and the page above already covers it.
+      - eval_time: 10m
+        alertname: AnycastInstanceDownDNS
+        exp_alerts: []
 
   # ── One instance down while another serves: warn, never page ──
   - interval: 1m
@@ -227,6 +233,33 @@ tests:
             exp_annotations:
               summary: "Announcement state disagrees with health on rpi.sco"
               description: "44.34.132.1 announced=1 while the health check says otherwise"
+
+  # ── The inverse mismatch, which also pins what `$value` means. A filter
+  # comparison in PromQL returns the LEFT-HAND sample value, so $value here is
+  # the announced state (0), not a boolean 1. This case is the discriminating
+  # one: announced=0 with healthy=1, where the two readings differ. ──
+  - interval: 1m
+    name: withdrawn while healthy
+    input_series:
+      - series: 'netops_anycast_announced{service="dns",ip="44.34.132.1",host="rpi.sco",instance="a"}'
+        values: "0+0x30"
+      - series: 'netops_service_healthy{service="dns",host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+      - series: 'netops_anycast_enabled{host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastStateMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              service: dns
+              ip: 44.34.132.1
+              host: rpi.sco
+              instance: a
+            exp_annotations:
+              summary: "Announcement state disagrees with health on rpi.sco"
+              description: "44.34.132.1 announced=0 while the health check says otherwise"
 
   # ── M1: with anycast off, a stale address must not raise the mismatch ──
   - interval: 1m

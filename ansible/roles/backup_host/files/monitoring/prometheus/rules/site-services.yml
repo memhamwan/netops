@@ -27,8 +27,14 @@ groups:
 
       # One instance down while another serves: clients are fine, redundancy
       # is not. Warn rather than page.
+      # The `and on()` guard is what makes that description true: without it
+      # this also fires per-instance during a total outage, adding warnings
+      # that claim "redundancy reduced" when there is no redundancy left and
+      # AnycastServiceDownDNS is already paging.
       - alert: AnycastInstanceDownDNS
-        expr: probe_success{job="blackbox-dns-internal",kind="unicast"} == 0
+        expr: >-
+          probe_success{job="blackbox-dns-internal",kind="unicast"} == 0
+          and on() count(probe_success{job="blackbox-dns-internal",kind="unicast"} == 1) > 0
         for: 5m
         labels:
           severity: warn
