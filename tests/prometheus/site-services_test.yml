@@ -15,6 +15,9 @@
 # loads no rules at all, which makes the whole suite pass vacuously.
 rule_files:
   - ../../ansible/roles/backup_host/files/monitoring/prometheus/rules/site-services.yml
+  # Also loaded so BlackboxScrapeFailed (the backstop the DNS count() guards
+  # rely on) can be exercised against the blackbox-dns-* jobs.
+  - ../../ansible/roles/backup_host/files/monitoring/prometheus/rules/alerts.yml
 
 evaluation_interval: 1m
 
@@ -327,6 +330,25 @@ tests:
       - eval_time: 10m
         alertname: AnycastStateMismatch
         exp_alerts: []
+
+  # ── A dead blackbox DNS job must page, not silently disable DNS alerting.
+  # The DNS alerts are count()-guarded and vanish when the probe series are
+  # absent; BlackboxScrapeFailed is the backstop, so it has to match the
+  # blackbox-dns-* jobs (it previously only covered icmp/http). ──
+  - interval: 1m
+    name: blackbox dns scrape job down pages
+    input_series:
+      - series: 'up{job="blackbox-dns-internal",instance="44.34.128.45"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: BlackboxScrapeFailed
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: blackbox-dns-internal
+            exp_annotations:
+              summary: "blackbox-dns-internal scrapes failing — reachability alerting is blind"
 
   # ── The health script itself dying freezes announcements ──
   - interval: 1m

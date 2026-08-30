@@ -189,9 +189,12 @@ groups:
     rules:
       # The health script is also the thing that would withdraw a dead
       # service. If it stops running, announcements freeze in place.
+      # No `for`: the `> 300` threshold is itself the ">5m" debounce, and
+      # time() - last_run is monotonic once the script stops running, so it
+      # cannot flap. Adding `for: 5m` on top would delay the page to ~10m,
+      # contradicting the "not run in >5m" summary.
       - alert: SiteServicesHealthCheckStale
         expr: time() - netops_site_services_last_run_timestamp_seconds > 300
-        for: 5m
         labels:
           severity: page
         annotations:

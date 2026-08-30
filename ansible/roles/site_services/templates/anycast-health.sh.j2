@@ -90,7 +90,10 @@ announce() {
   _ip=$1
   _want=$2
   _present=0
-  if ip -4 addr show dev "$ANYCAST_IF" 2>/dev/null | grep -q "inet $_ip/32"; then
+  # -F (fixed string): the dots in $_ip are literal, not regex wildcards, so
+  # 44.34.132.1/32 can never spuriously match a sibling like 44.34.132.13/32.
+  # This decides add/del, so a false positive would leave an address stranded.
+  if ip -4 addr show dev "$ANYCAST_IF" 2>/dev/null | grep -qF "inet $_ip/32"; then
     _present=1
   fi
 
