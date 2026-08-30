@@ -1,0 +1,25 @@
+---
+# Imported LAST on purpose: this changes the API services over the API
+# connection itself. Run from a controller outside api_allowed_sources (a
+# laptop without -e api_extra_sources), it cuts off its own transport — by
+# running last, the rest of the baseline is already applied when it does.
+#
+# Target state: api-ssl (8729, per-device cert from onboard_device.yml)
+# restricted to the collector; plaintext api (8728) disabled — its ACL never
+# protected the credentials from passive capture on radio links. Requires the
+# migration order in the role README (cert+8729 first, mktxp flipped, then
+# this).
+# two tasks, in this order: disabling 8728 is safe (this session runs on
+# 8729), while the api-ssl source ACL can sever the session — if it does,
+# the plaintext disable must already have landed
+- name: Disable plaintext api
+  community.routeros.api_modify:
+    path: ip service
+    data:
+      - {name: api, disabled: true}
+
+- name: Restrict api-ssl to allowed sources (very last — can sever this session)
+  community.routeros.api_modify:
+    path: ip service
+    data:
+      - {name: api-ssl, disabled: false, port: 8729, certificate: api-ssl, address: "{{ api_allowed_sources | join(',') }}"}

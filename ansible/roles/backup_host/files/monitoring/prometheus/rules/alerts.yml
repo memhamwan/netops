@@ -1,0 +1,142 @@
+groups:
+  - name: reachability
+    rules:
+      - alert: NodeDown
+        expr: probe_success{job="blackbox-icmp"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.device }} unreachable"
+          description: "ICMP to {{ $labels.instance }} (site {{ $labels.site }}) failing for 5m"
+      - alert: SiteDown
+        expr: count by (site) (probe_success{job="blackbox-icmp",kind!="ups"} == 0) == count by (site) (probe_success{job="blackbox-icmp",kind!="ups"})
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Site {{ $labels.site }} entirely unreachable"
+          description: "Every monitored device at {{ $labels.site }} is failing ICMP"
+
+  - name: services
+    rules:
+      - alert: ServiceHTTPDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.service }} HTTP check failing"
+          description: "{{ $labels.instance }} not returning 2xx for 5m"
+
+  - name: host
+    rules:
+      # node-exporter strips --path.rootfs from mountpoint labels: the host
+      # root is mountpoint="/", never "/host"
+      - alert: MonitoringHostDiskFull
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.10
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "rpi.sco root filesystem under 10% free"
+      - alert: MonitoringHostHot
+        expr: node_thermal_zone_temp > 80
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "rpi.sco thermal zone above 80C"
+
+  - name: pipeline
+    rules:
+      # if blackbox itself dies, probe_success vanishes and NodeDown/SiteDown
+      # *clear* — this is the alert that says "reachability alerting is blind"
+      - alert: BlackboxScrapeFailed
+        expr: avg by (job) (up{job=~"blackbox-icmp|blackbox-http"}) < 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.job }} scrapes failing — reachability alerting is blind"
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "node-exporter down — host disk/thermal/backup alerting is blind"
+      # one endpoint carries the whole fleet's RouterOS metrics
+      - alert: MktxpDown
+        expr: up{job="mktxp"} == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "mktxp exporter down — no RouterOS metrics for the fleet"
+      - alert: FullBackupStale
+        expr: time() - netops_full_backup_last_run_timestamp_seconds > 93600
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "nightly encrypted backup hasn't completed a run in >26h"
+      # dark sites fail export every night by design; only warn for devices
+      # that answer ICMP yet still can't be backed up (auth/key breakage).
+      # Arithmetic join so `site` comes from the probe series — the textfile
+      # metric inherits the collector's own site label, which would misgroup
+      - alert: BackupExportFailing
+        expr: >-
+          sum by (device) (netops_full_backup_host_failed)
+          * on(device) group_left(site)
+          sum by (device, site) (probe_success{job="blackbox-icmp"}) == 1
+        for: 1h
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.device }} is reachable but its full-config export is failing"
+      - alert: OxidizedStale
+        expr: time() - netops_oxidized_last_success_timestamp_seconds > 10800
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "oxidized hasn't fetched any config successfully in >3h"
+      # fetches can stay green while the nodes_done push hook fails; this
+      # watches local devices.git HEAD vs the GitHub main branch
+      - alert: OxidizedUnpublished
+        expr: netops_oxidized_pushed == 0
+        for: 2h
+        labels:
+          severity: page
+        annotations:
+          summary: "oxidized backups not reaching GitHub for >2h (push hook or network)"
+      # staleness alerts evaluate empty when the metric was never written
+      # (first run failed, textfile deleted); absent() + a long `for:` is the
+      # startup grace period
+      - alert: FullBackupMetricMissing
+        expr: absent(netops_full_backup_last_run_timestamp_seconds)
+        for: 26h
+        labels:
+          severity: page
+        annotations:
+          summary: "nightly backup metric absent for >26h — pipeline or metrics broken"
+      - alert: OxidizedMetricMissing
+        expr: absent(netops_oxidized_last_success_timestamp_seconds)
+        for: 2h
+        labels:
+          severity: page
+        annotations:
+          summary: "oxidized freshness metric absent for >2h — metrics timer broken"
+
+  - name: meta
+    rules:
+      # Always-firing heartbeat. Once Grafana Cloud remote_write is set up, a
+      # cloud-side alert on the *absence* of this series is the dead-man's
+      # switch for "SCO is dark or the monitoring host died".
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Monitoring pipeline heartbeat (always firing by design)"

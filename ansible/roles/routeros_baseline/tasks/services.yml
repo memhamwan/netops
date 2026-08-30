@@ -1,0 +1,46 @@
+---
+# Service lockdown, ported from ioc-terraform's routeros role with one
+# deliberate change: the API stays reachable — as api-ssl (8729, per-device
+# cert from the onboarding play) restricted to the collector (mktxp + this
+# role's own transport) — instead of disabled outright.
+# api and api-ssl are managed in api_lockdown.yml, imported LAST — changing
+# them can sever this very session, so everything else must already be applied.
+- name: Configure IP services
+  community.routeros.api_modify:
+    path: ip service
+    data:
+      - {name: telnet, disabled: true}
+      - {name: ftp, disabled: true}
+      - {name: www, disabled: true}
+      - {name: www-ssl, disabled: true}
+      - {name: winbox, disabled: true}
+      - {name: ssh, port: 222}
+
+- name: Enforce SSH strong crypto
+  community.routeros.api_modify:
+    path: ip ssh
+    data:
+      - {strong-crypto: true}
+
+- name: Disable bandwidth test server
+  community.routeros.api_modify:
+    path: tool bandwidth-server
+    data:
+      - {enabled: false, authenticate: false}
+
+# NOTE(review): the old role also disabled neighbor discovery fleet-wide.
+# That is deliberately NOT done here — only the MAC server/winbox
+# restrictions below are applied; neighbor discovery is untouched (README
+# open question: disable vs restrict to an interface list). RoMON, used for
+# L2 discovery, is a separate subsystem and unaffected either way.
+- name: Restrict MAC server
+  community.routeros.api_modify:
+    path: tool mac-server
+    data:
+      - {allowed-interface-list: none}
+
+- name: Restrict MAC winbox
+  community.routeros.api_modify:
+    path: tool mac-server mac-winbox
+    data:
+      - {allowed-interface-list: none}

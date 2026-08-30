@@ -1,0 +1,74 @@
+---
+# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+#
+# One-time bootstrap, run over SSH as an operator account: creates the
+# dedicated `ansible` service user (group netops-ansible) that all other
+# plays authenticate as — SSH key for shell access, and the sops-managed
+# API password (RouterOS API auth is password-based, so the baseline play
+# needs it; it is never printed and lives only in sops + on the devices).
+# Usage (after PR review):
+#   ansible-playbook playbooks/bootstrap_ansible_user.yml -e confirm_execution=true \
+#     [-l r1.sco.memhamwan.net] [-e ansible_user=turnrye]
+- name: Bootstrap ansible service user on RouterOS
+  hosts: routeros
+  gather_facts: false
+  vars:
+    ansible_user: "{{ lookup('env', 'USER') }}"
+  pre_tasks:
+    - name: Execution gate — this play is a draft pending review
+      ansible.builtin.assert:
+        that: confirm_execution | default(false) | bool
+        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+      run_once: true
+
+    - name: Load secrets from sops (ansible API password)
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      delegate_to: localhost
+  tasks:
+    - name: Ensure netops-ansible group
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user group find name=netops-ansible]] = 0) do={/user group add name=netops-ansible policy=api,ssh,ftp,read,write,policy,test}'
+      changed_when: true
+
+    # no_log: the command (password included) would otherwise land in ansible
+    # output and CI/terminal logs — and the password stays valid on the device
+    - name: Ensure ansible user (random discarded password)
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user find name=ansible]] = 0) do={/user add name=ansible group=netops-ansible password="{{ lookup("community.general.random_string", length=32, special=false) }}"}'
+      changed_when: true
+      no_log: true
+
+    # converge, not just create-if-absent: a pre-existing group with the
+    # wrong policy or a pre-existing user outside the group would strand the
+    # API baseline at authentication — and it can't fix that itself
+    - name: Converge group policy and user membership
+      community.routeros.command:
+        commands:
+          - '/user group set [find name=netops-ansible] policy=api,ssh,ftp,read,write,policy,test'
+          - '/user set [find name=ansible] group=netops-ansible'
+      changed_when: true
+
+    - name: Upload ansible public key
+      ansible.netcommon.net_put:
+        src: "{{ playbook_dir }}/../roles/routeros_baseline/files/ansible.pub"
+        dest: /ansible.pub
+        protocol: scp
+
+    - name: Import ansible ssh key
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user ssh-keys find user=ansible]] = 0) do={/user ssh-keys import public-key-file=ansible.pub user=ansible}'
+      changed_when: true
+
+    # the account's real password is the sops API credential — the baseline
+    # play authenticates over the RouterOS API with it (API auth is
+    # password-based; the creation-time random value above is discarded)
+    - name: Set API password from sops (never logged)
+      community.routeros.command:
+        commands:
+          - '/user set [find name=ansible] password="{{ routeros_svc_api_password }}"'
+      changed_when: true
+      no_log: true

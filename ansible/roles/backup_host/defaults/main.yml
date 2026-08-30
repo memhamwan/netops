@@ -1,0 +1,34 @@
+---
+netops_opt: /opt/netops
+netops_var: /var/lib/netops
+# uid/gid of the container users that own each data dir
+data_dirs:
+  - {path: prometheus, owner: "65534"}
+  - {path: alertmanager, owner: "65534"}
+  - {path: grafana, owner: "472"}
+  - {path: loki, owner: "10001"}
+  - {path: alloy, owner: "0"}
+  - {path: caddy/data, owner: "0"}
+  - {path: caddy/config, owner: "0"}
+  # holds mktxp.conf with the fleet API password — keep it root-only
+  - {path: mktxp, owner: "0", mode: "0700"}
+  # node-exporter textfile collector dir (backup/oxidized freshness metrics)
+  - {path: node-exporter, owner: "0"}
+# oxidized container uid
+oxidized_uid: "30000"
+
+# Flip to true as step 2 of the api-ssl migration (routeros_baseline README):
+# after onboard_device.yml has put certs + api-ssl (8729) on the fleet, and
+# BEFORE the baseline's api_lockdown disables plaintext 8728. Defaults to the
+# currently-deployed plaintext state so a redeploy before the device-side
+# migration doesn't break fleet metrics.
+mktxp_use_ssl: false
+
+# Sources allowed to reach the public syslog listener (514) — docker-published
+# ports bypass INPUT, so this is enforced in the DOCKER-USER chain. AMPRNet-wide
+# by default; tighten to the MemHamWAN allocation once confirmed. Spoofed UDP
+# from inside these ranges still gets through — the alloy hostname keep-rule is
+# the second gate.
+syslog_allowed_cidrs:
+  - 44.0.0.0/9
+  - 44.128.0.0/10

@@ -1,0 +1,7 @@
+---
+# Identity = inventory FQDN (r1.sco and r2.hil currently use short names)
+- name: Enforce FQDN system identity
+  community.routeros.api_modify:
+    path: system identity
+    data:
+      - {name: "{{ inventory_hostname }}"}

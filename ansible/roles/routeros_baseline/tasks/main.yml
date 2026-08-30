@@ -1,0 +1,16 @@
+---
+# DRAFT — never executed against a device. Review gate: see role README.
+- name: Service groups + membership
+  ansible.builtin.import_tasks: users.yml
+- name: Service lockdown
+  ansible.builtin.import_tasks: services.yml
+- name: Remote syslog
+  ansible.builtin.import_tasks: logging.yml
+- name: NTP
+  ansible.builtin.import_tasks: ntp.yml
+- name: FQDN identity
+  ansible.builtin.import_tasks: identity.yml
+- name: User audit (report-only)
+  ansible.builtin.import_tasks: audit.yml
+- name: API source restriction (last — can sever this session)
+  ansible.builtin.import_tasks: api_lockdown.yml

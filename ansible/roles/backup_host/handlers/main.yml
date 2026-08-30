@@ -1,0 +1,60 @@
+---
+- name: restart sshd
+  ansible.builtin.shell: sshd -t && systemctl restart ssh
+  changed_when: true
+
+- name: systemd reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart oxidized
+  ansible.builtin.command: docker restart oxidized
+  changed_when: true
+
+- name: restart mktxp
+  ansible.builtin.command: docker restart mktxp
+  changed_when: true
+
+- name: restart caddy
+  ansible.builtin.command: docker restart caddy
+  changed_when: true
+
+- name: restart alertmanager
+  ansible.builtin.command: docker restart alertmanager
+  changed_when: true
+
+# GF_SECURITY_ADMIN_PASSWORD__FILE only applies when grafana initializes its
+# database — rotating the sops secret does nothing to an existing install
+# without this explicit reset (runs before the restart handler below)
+- name: reset grafana admin password
+  ansible.builtin.shell: docker exec grafana grafana cli admin reset-admin-password "$(cat {{ netops_var }}/secrets/grafana-admin-password)"
+  changed_when: true
+  no_log: true
+
+- name: restart grafana
+  ansible.builtin.command: docker restart grafana
+  changed_when: true
+
+- name: restart alloy
+  ansible.builtin.command: docker restart alloy
+  changed_when: true
+
+- name: reapply firewall
+  ansible.builtin.systemd:
+    name: netops-firewall.service
+    state: restarted
+    daemon_reload: true
+
+- name: reload prometheus
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/-/reload
+    method: POST
+
+# only bounce the containers whose config dir actually changed — a
+# prometheus-targets change must not drop grafana viewer sessions
+- name: restart reconfigured monitoring containers
+  ansible.builtin.command: docker restart {{ item.item }}
+  loop: "{{ monitoring_config_sync.results | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+  changed_when: true

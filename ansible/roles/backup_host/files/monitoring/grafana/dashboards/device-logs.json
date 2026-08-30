@@ -1,0 +1,57 @@
+{
+  "uid": "device-logs",
+  "title": "Device Logs",
+  "tags": ["memhamwan"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "host", "label": "Device", "type": "query",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "query": {"label": "host", "stream": "{job=\"routeros-syslog\"}", "type": 1},
+        "includeAll": true, "allValue": ".+", "multi": true, "current": {"text": "All", "value": ["$__all"]}
+      },
+      {
+        "name": "severity", "label": "Severity", "type": "query",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "query": {"label": "severity", "stream": "{job=\"routeros-syslog\"}", "type": 1},
+        "includeAll": true, "allValue": ".+", "multi": true, "current": {"text": "All", "value": ["$__all"]}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Log volume by device",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "sum by (host) (count_over_time({job=\"routeros-syslog\", host=~\"$host\"}[$__auto]))", "legendFormat": "{{host}}"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 10, "drawStyle": "bars", "stacking": {"mode": "normal"}}}, "overrides": []}
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Login events (account topic)",
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [
+        {"refId": "A", "expr": "sum by (host) (count_over_time({job=\"routeros-syslog\", host=~\"$host\"} |= \"login failure\" [$__auto]))", "legendFormat": "{{host}} failures"}
+      ],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 30, "drawStyle": "bars", "stacking": {"mode": "normal"}}, "color": {"mode": "palette-classic"}}, "overrides": []}
+    },
+    {
+      "id": 3, "type": "logs", "title": "Device syslog",
+      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 7},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "{job=\"routeros-syslog\", host=~\"$host\", severity=~\"$severity\"}"}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true}
+    },
+    {
+      "id": 4, "type": "logs", "title": "Backup host journal (rpi.sco)",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 23},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "{job=\"journald\"}"}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    }
+  ]
+}

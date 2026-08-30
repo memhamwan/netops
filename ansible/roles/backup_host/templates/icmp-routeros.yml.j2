@@ -1,0 +1,8 @@
+# RENDERED from ansible/inventory/hosts.yml — do not edit by hand.
+# One entry per device. `device` (short hostname) drives alerts/dashboards;
+# the target is the inventory IP when recorded — monitoring must keep working
+# when DNS is broken — and the hostname otherwise.
+{% for h in groups['routeros'] | sort %}
+- labels: {site: {{ hostvars[h].group_names | reject('eq', 'routeros') | first }}, device: {{ h | replace('.memhamwan.net', '') }}}
+  targets: [{{ hostvars[h].ip | default(h) }}]
+{% endfor %}

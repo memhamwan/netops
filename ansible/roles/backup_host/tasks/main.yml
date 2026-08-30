@@ -1,0 +1,251 @@
+---
+# Deploys/refreshes the whole netops stack on the backup host. Replaces the
+# retired deploy.sh. Secrets come from sops (loaded by the playbook);
+# fleet-derived files (router.db, ICMP targets, mktxp.conf) are templated
+# from the inventory at deploy time — the inventory is the only fleet list.
+- name: SSH on port 222 (network-wide convention) alongside 22
+  ansible.builtin.copy:
+    src: ssh/10-netops-ports.conf
+    dest: /etc/ssh/sshd_config.d/10-netops-ports.conf
+    mode: "0644"
+  notify: restart sshd
+
+# docker and sops are deliberately NOT installed here (install method is a
+# host-bootstrap decision — see README); everything apt-safe is
+- name: Host packages (rsync/jq/git/curl for sync + backup/metrics scripts, iptables for the firewall unit)
+  ansible.builtin.apt:
+    name: [rsync, jq, git, curl, iptables]
+    state: present
+
+- name: Preflight — docker compose and sops present (README bootstrap installs them)
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - docker compose version
+    - sops --version
+  changed_when: false
+
+# synchronize + delete so renamed/removed files don't linger on the host
+# (plain copy never prunes — stale rule files kept loading via rules/*.yml)
+- name: Sync stack code to {{ netops_opt }}
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "{{ netops_opt }}/"
+    delete: true
+    owner: false
+    group: false
+  loop: [oxidized, monitoring, full-backup, metrics]
+
+- name: Oxidized config directories
+  ansible.builtin.file:
+    path: "{{ netops_var }}/oxidized/{{ item }}"
+    state: directory
+    owner: "{{ oxidized_uid }}"
+    group: "{{ oxidized_uid }}"
+    mode: "0755"
+  loop: ["", model]
+
+- name: Install oxidized config + model override
+  ansible.builtin.copy:
+    src: "oxidized/{{ item.src }}"
+    dest: "{{ netops_var }}/oxidized/{{ item.dest }}"
+    owner: "{{ oxidized_uid }}"
+    group: "{{ oxidized_uid }}"
+    mode: "0644"
+  loop:
+    - {src: config, dest: config}
+    - {src: model/routeros.rb, dest: model/routeros.rb}
+  notify: restart oxidized
+
+- name: Render oxidized fleet list from inventory
+  ansible.builtin.template:
+    src: router.db.j2
+    dest: "{{ netops_var }}/oxidized/router.db"
+    owner: "{{ oxidized_uid }}"
+    group: "{{ oxidized_uid }}"
+    mode: "0644"
+  notify: restart oxidized
+
+# prometheus reloads over its lifecycle endpoint instead of restarting
+- name: Install prometheus config
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/monitoring/prometheus"
+    dest: "{{ netops_var }}/monitoring/"
+    delete: true
+    owner: false
+    group: false
+    rsync_opts:
+      # rendered from inventory below — excluded so delete can't prune them
+      - "--exclude=targets/icmp-*.yml"
+  notify: reload prometheus
+
+- name: Install monitoring configs
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/monitoring/{{ item }}"
+    dest: "{{ netops_var }}/monitoring/"
+    delete: true
+    owner: false
+    group: false
+  loop: [alertmanager, blackbox, grafana, caddy, loki]
+  register: monitoring_config_sync
+  notify: restart reconfigured monitoring containers
+
+- name: Alloy config directory
+  ansible.builtin.file:
+    path: "{{ netops_var }}/monitoring/alloy"
+    state: directory
+    mode: "0755"
+
+- name: Render alloy config from inventory
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: "{{ netops_var }}/monitoring/alloy/config.alloy"
+    mode: "0644"
+  notify: restart alloy
+
+- name: Render blackbox targets from inventory
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ netops_var }}/monitoring/prometheus/targets/{{ item }}"
+    mode: "0644"
+  loop: [icmp-routeros.yml, icmp-infra.yml]
+  notify: reload prometheus
+
+- name: Create data directories with container ownership
+  ansible.builtin.file:
+    path: "{{ netops_var }}/{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop: "{{ data_dirs }}"
+
+# Each secret is owned by (and bind-mounted into) the one container that
+# consumes it, so a compromised container can only read its own credential.
+- name: Secrets directory
+  ansible.builtin.file:
+    path: "{{ netops_var }}/secrets"
+    state: directory
+    mode: "0750"
+
+- name: Write grafana admin password
+  ansible.builtin.copy:
+    content: "{{ grafana_admin_password }}"
+    dest: "{{ netops_var }}/secrets/grafana-admin-password"
+    owner: "472"
+    group: "472"
+    mode: "0400"
+  no_log: true
+  notify:
+    # the env var is bootstrap-only; rotation needs the explicit cli reset
+    - reset grafana admin password
+    - restart grafana
+
+- name: Write discord webhook url
+  ansible.builtin.copy:
+    content: "{{ discord_webhook_url }}"
+    dest: "{{ netops_var }}/secrets/discord-webhook-url"
+    owner: "65534"
+    group: "65534"
+    mode: "0400"
+  no_log: true
+  notify: restart alertmanager
+
+# operator reference only — caddy consumes the bcrypt hash in the snippet
+- name: Write netops basic-auth password
+  ansible.builtin.copy:
+    content: "{{ caddy_basicauth_password }}"
+    dest: "{{ netops_var }}/secrets/netops-basicauth-password"
+    owner: "0"
+    group: "0"
+    mode: "0400"
+  no_log: true
+
+- name: Remove retired mktxp-password working copy (mktxp.conf holds it)
+  ansible.builtin.file:
+    path: "{{ netops_var }}/secrets/mktxp-password"
+    state: absent
+
+# no_log: the bcrypt verifier enables offline guessing; --diff would print it
+- name: Write caddy auth snippet
+  ansible.builtin.template:
+    src: caddy-auth.snippet.j2
+    dest: "{{ netops_var }}/secrets/caddy-auth.snippet"
+    owner: "0"
+    group: "0"
+    mode: "0400"
+  no_log: true
+  notify: restart caddy
+
+# no_log: the rendered file holds the fleet API password; --diff would print it
+- name: Render mktxp.conf from inventory + sops
+  ansible.builtin.template:
+    src: mktxp.conf.j2
+    dest: "{{ netops_var }}/mktxp/mktxp.conf"
+    mode: "0600"
+  no_log: true
+  notify: restart mktxp
+
+- name: Install mktxp exporter settings
+  ansible.builtin.copy:
+    src: monitoring/mktxp/_mktxp.conf
+    dest: "{{ netops_var }}/mktxp/_mktxp.conf"
+    mode: "0600"
+  notify: restart mktxp
+
+- name: Firewall directory
+  ansible.builtin.file:
+    path: "{{ netops_opt }}/firewall"
+    state: directory
+    mode: "0755"
+
+- name: Render DOCKER-USER firewall script
+  ansible.builtin.template:
+    src: netops-firewall.sh.j2
+    dest: "{{ netops_opt }}/firewall/netops-firewall.sh"
+    mode: "0755"
+  notify: reapply firewall
+
+- name: Install firewall unit
+  ansible.builtin.copy:
+    src: firewall/netops-firewall.service
+    dest: /etc/systemd/system/netops-firewall.service
+    mode: "0644"
+  notify:
+    - systemd reload
+    - reapply firewall
+
+- name: Enable firewall unit
+  ansible.builtin.systemd:
+    name: netops-firewall.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Install systemd units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item | basename }}"
+    mode: "0644"
+  loop:
+    - full-backup/netops-full-backup.service
+    - full-backup/netops-full-backup.timer
+    - metrics/netops-oxidized-metrics.service
+    - metrics/netops-oxidized-metrics.timer
+  notify: systemd reload
+
+- name: Enable timers (nightly backup, oxidized freshness metrics)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - netops-full-backup.timer
+    - netops-oxidized-metrics.timer
+
+- name: Ensure both compose stacks are up
+  ansible.builtin.command:
+    cmd: docker compose -f {{ netops_opt }}/{{ item }}/docker-compose.yml up -d
+  loop: [oxidized, monitoring]
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr"

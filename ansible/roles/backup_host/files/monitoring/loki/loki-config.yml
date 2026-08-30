@@ -1,0 +1,48 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: "2024-01-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  # 30 days; revisit once real volume/SD wear is known
+  retention_period: 720h
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  # syslog is unauthenticated: a sender spoofing an allowlisted hostname can
+  # inject. Measured fleet volume is ~0.6 MB/hour (~170 B/s), so these caps
+  # are still >1000x real traffic. Single-binary loki has no hard disk
+  # quota — the caps bound the fill *rate* (a max-rate flood needs days, not
+  # hours, to threaten the disk) and MonitoringHostDiskFull is the backstop.
+  ingestion_rate_mb: 0.25
+  ingestion_burst_size_mb: 1
+  per_stream_rate_limit: 128KB
+  per_stream_rate_limit_burst: 512KB
+  max_line_size: 16KB
+  max_global_streams_per_user: 5000
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

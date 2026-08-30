@@ -1,0 +1,49 @@
+{
+  "uid": "mon-host",
+  "title": "Monitoring Host (rpi.sco)",
+  "tags": ["memhamwan"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {"from": "now-24h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "CPU usage",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "cpu"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "max": 1, "min": 0, "custom": {"fillOpacity": 15}}, "overrides": []}
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Memory used",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes", "legendFormat": "mem"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "max": 1, "min": 0, "custom": {"fillOpacity": 15}}, "overrides": []}
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Root filesystem free",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"}", "legendFormat": "free"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 15}}, "overrides": []}
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "SoC temperature",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "node_thermal_zone_temp", "legendFormat": "{{zone}}"}],
+      "fieldConfig": {"defaults": {"unit": "celsius", "custom": {"fillOpacity": 10}}, "overrides": []}
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Network I/O (eth0)",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "rate(node_network_receive_bytes_total{device=\"eth0\"}[5m])", "legendFormat": "rx"},
+        {"refId": "B", "expr": "rate(node_network_transmit_bytes_total{device=\"eth0\"}[5m])", "legendFormat": "tx"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"fillOpacity": 10}}, "overrides": []}
+    }
+  ]
+}
