@@ -34,7 +34,7 @@ Device access uses two dedicated least-privilege accounts on every router
 
 The age private key needed to decrypt the full backups is **not** on the
 backup host — encryption uses public recipients only (same recipient set as
-netops-secrets). To decrypt:
+this repo's `.sops.yaml`). To decrypt:
 `sops decrypt --input-type binary --output-type binary encrypted/<host>.rsc.sops`
 
 The `encrypted/*.sha256` files are hashes of the timestamp-stripped plaintext,

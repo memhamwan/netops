@@ -19,8 +19,9 @@ ROUTER_DB=${ROUTER_DB:-/var/lib/netops/oxidized/router.db}
 SSH_KEY=${SSH_KEY:-/var/lib/netops/ssh/oxidized_full_ed25519}
 DEPLOY_KEY=${DEPLOY_KEY:-/var/lib/netops/ssh/gh_deploy_ed25519}
 REPO=${REPO:-/var/lib/netops/encrypted-repo}
-# Same recipient set as memhamwan/netops-secrets; add recipients here as needed.
-AGE_RECIPIENTS=${AGE_RECIPIENTS:-age1xfngu8m7w7epw797sdnjc746ysuksxevnucr9t4alq82hgzxdagq4u2y4p}
+# Keep in sync with .sops.yaml (shared netops key + turnrye local) so every
+# holder who can read runtime secrets can also decrypt the backups.
+AGE_RECIPIENTS=${AGE_RECIPIENTS:-age1xfngu8m7w7epw797sdnjc746ysuksxevnucr9t4alq82hgzxdagq4u2y4p,age1t5g5hpu4fxr8xmx5xh35w0fus0ryygwkzlx6knm7fwuwj50zse2qj30rxs}
 SSH_USER=oxidized-full
 SSH_PORT=222
 

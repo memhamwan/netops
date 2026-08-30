@@ -62,12 +62,14 @@ loki.relabel "syslog" {
 
 loki.process "routeros" {
 	// people fat-finger passwords into the username field, and anonymous
-	// grafana can query loki — never ship attempted usernames. No capture
-	// group on purpose: the whole match is replaced with the full phrase,
-	// which behaves identically under either reading of stage.replace
-	// semantics, and dashboard |= "login failure" filters keep matching
+	// grafana can query loki — never ship attempted usernames. The ENTIRE
+	// remainder is redacted (a multi-word password would survive a \S+
+	// match); the transport source stays available as the src_ip label.
+	// No capture group on purpose: whole-match replacement behaves
+	// identically under either reading of stage.replace semantics, and
+	// dashboard |= "login failure" filters keep matching
 	stage.replace {
-		expression = "login failure for user \\S+"
+		expression = "login failure for user .*"
 		replace    = "login failure for user <redacted>"
 	}
 	// first topic only, and only from a fixed vocabulary, so an
