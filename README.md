@@ -124,6 +124,21 @@ to rpi.sco.memhamwan.net as your user. On a **fresh** host, add
 `-e ansible_port=22` for the first run: the port-222 sshd drop-in is installed
 by this very play.)
 
+**Fleet SSH host keys:** `ansible/known_hosts` pins every device's ssh-rsa
+host key. Ansible's libssh transport negotiates rsa, reads only
+`~/.ssh/known_hosts`, and can't prompt on first contact — unlike your
+interactive ssh — so once per workstation:
+
+```sh
+cd ansible && ansible-playbook playbooks/seed_known_hosts.yml
+```
+
+Device plays fail fast with instructions if a pinned key is missing. To add
+a device that was dark when the file was seeded: `ssh-keyscan -p 222 -t rsa
+<host>` **from rpi.sco**, append the line via PR, re-run the seed play. A
+*changed* line in this file means a device's host key changed — treat that
+diff as an incident to investigate, not a formality.
+
 To add a device: add it to the inventory, run the bootstrap/onboarding plays —
 `bootstrap_ansible_user.yml` (automation account) and `onboard_device.yml`
 (backup + mktxp service accounts) — then the baseline play (all three DRAFT —

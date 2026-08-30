@@ -1,0 +1,28 @@
+---
+# Merge the pinned fleet host keys (ansible/known_hosts) into your own
+# ~/.ssh/known_hosts. Local-only: connects to nothing, changes no device.
+#
+# Why: ansible's network_cli transport (libssh) negotiates the ssh-rsa host
+# key, reads only ~/.ssh/known_hosts, and cannot prompt on first contact —
+# interactive OpenSSH sessions typically never stored the rsa key, so device
+# plays would otherwise fail with an inscrutable "Host is unknown".
+- name: Pin fleet host keys into ~/.ssh/known_hosts
+  hosts: localhost
+  gather_facts: false
+  vars:
+    pinned_file: "{{ playbook_dir }}/../known_hosts"
+  tasks:
+    - name: Read pinned entries
+      ansible.builtin.set_fact:
+        pinned_entries: >-
+          {{ lookup('file', pinned_file).splitlines()
+             | reject('match', '^\s*(#|$)') | list }}
+
+    - name: Pin entries
+      ansible.builtin.known_hosts:
+        name: "{{ item.split(' ') | first }}"
+        key: "{{ item }}"
+        state: present
+      loop: "{{ pinned_entries }}"
+      loop_control:
+        label: "{{ item.split(' ') | first }}"
