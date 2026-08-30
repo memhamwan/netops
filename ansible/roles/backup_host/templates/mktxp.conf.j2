@@ -14,7 +14,7 @@
     use_ssl = False
 {% endif %}
     routerboard = True
-{% for h in groups['routeros'] | sort %}
+{% for h in groups['routeros'] | difference(groups['down'] | default([])) | sort %}
 
 [{{ h | replace('.memhamwan.net', '') }}]
 {# inventory IP when recorded, like the ICMP targets — fleet metrics must
