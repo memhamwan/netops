@@ -8,10 +8,15 @@
     path: user group
     data: "{{ service_groups }}"
 
+# read-only query; check_mode false so --check runs still get real data
+# (community.routeros.api would otherwise be skipped, and the membership
+# and audit logic below would choke on the skip placeholder)
 - name: Fetch current users
   community.routeros.api:
     path: user
   register: baseline_users
+  check_mode: false
+  changed_when: false
 
 # per-account, so a device missing one service account (not yet onboarded for
 # that function) still gets the others corrected
