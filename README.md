@@ -167,7 +167,10 @@ the backup host to pick up the new fleet list.
 ansible/             inventory (source of truth), playbooks, roles
   roles/backup_host/       deploys the whole rpi.sco stack (configs live here)
   roles/routeros_baseline/ DRAFT device baseline — never executed, see its README
+  roles/site_services/     DRAFT DNS/NTP + anycast — never executed, see its README
+docs/                design docs (site services / anycast)
 secrets/             sops/age-encrypted runtime secrets
+tests/prometheus/    promtool unit tests for the alert rules
 ```
 
 ## Backup host bootstrap (one-time)
@@ -223,12 +226,15 @@ history shows real drift/churn patterns. Related planned work: restrict router
 SSH (port 222) reachability now that polling originates on-network, and rotate
 the legacy shared credentials.
 
-**Distributed network services (design under review):** grow the on-network
-hosts (rpi.sco at SCO, a Pi at HIL) into anycast providers of recursive +
-authoritative DNS and NTP on the *existing* well-known service addresses, so
-clients never change and the nearest healthy instance wins — fixing the
-single-site fragility exposed when LEB went dark. Full design, research
-findings, and rollout plan: [docs/site-services-design.md](docs/site-services-design.md).
+**Distributed network services (`site_services`, DRAFT — never executed):**
+grow the on-network hosts (rpi.sco at SCO, a Pi at HIL) into anycast providers
+of recursive + authoritative DNS and NTP on the *existing* well-known service
+addresses, so clients never change and the nearest healthy instance wins —
+fixing the single-site fragility exposed when LEB went dark. The role exists
+and is CI-validated; anycast is off by default and enabling it needs an
+explicit second flag. Design, research findings, monitoring strategy, and
+rollout plan: [docs/site-services-design.md](docs/site-services-design.md);
+runbook: [role README](ansible/roles/site_services/README.md).
 Related open thread kept from the original sketch: this pattern may reshape
 the management-access design — trusted OSPF-attached infra hosts as
 bastions/automation runners may serve better than (or shrink) the

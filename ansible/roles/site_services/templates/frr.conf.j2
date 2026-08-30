@@ -1,0 +1,55 @@
+! RENDERED by the netops site_services role — do not edit on the host.
+! Contains the fleet OSPF MD5 key: mode 0640 frr:frr, and the Ansible task
+! that writes it runs with no_log.
+!
+! This host is an ordinary OSPF speaker on the site LAN (area 0, broadcast,
+! MD5 — the same settings the site routers use on their LAN bridges). It
+! announces ONLY the service /32s that the health script has placed on the
+! dummy interface: no default, no aggregates, nothing learned from elsewhere.
+frr defaults traditional
+hostname {{ inventory_hostname }}
+log syslog informational
+service integrated-vtysh-config
+!
+interface {{ site_lan_interface }}
+ ip ospf area 0.0.0.0
+ ip ospf network broadcast
+ ip ospf authentication message-digest
+ ip ospf message-digest-key 1 md5 {{ ospf_md5_key }}
+ ! Never become DR/BDR: a Pi rebooting must not trigger a designated-router
+ ! election on the site LAN. The routers are the DR candidates.
+ ip ospf priority 0
+ ip ospf hello-interval 10
+ ip ospf dead-interval 40
+!
+! The dummy carries the service addresses. It is NOT an OSPF interface —
+! the /32s reach OSPF via redistribute connected, filtered below.
+interface {{ anycast_interface }}
+ ip ospf passive
+!
+router ospf
+ ospf router-id {{ ip | default(ansible_host) | default(inventory_hostname) }}
+ ! Everything is passive unless explicitly enabled, so a future interface on
+ ! this host cannot silently form an adjacency.
+ passive-interface default
+ no passive-interface {{ site_lan_interface }}
+ ! Type-1 externals: the metric accumulates internal path cost, which is what
+ ! makes the nearest healthy instance win.
+ redistribute connected metric-type 1 route-map ANYCAST-ONLY
+ ! This host must never originate a default route.
+ no default-information originate
+!
+! Self-discipline, not containment: a compromised host could still be made to
+! announce anything. Fleet-side in-filters are the real control (M4).
+{% for service in anycast_services %}
+ip prefix-list ANYCAST-SERVICES seq {{ loop.index * 5 }} permit {{ service.ip }}/32
+{% endfor %}
+ip prefix-list ANYCAST-SERVICES seq {{ (anycast_services | length + 1) * 5 }} deny any
+!
+route-map ANYCAST-ONLY permit 10
+ match ip address prefix-list ANYCAST-SERVICES
+!
+route-map ANYCAST-ONLY deny 20
+!
+line vty
+!

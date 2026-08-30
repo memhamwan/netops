@@ -1,0 +1,256 @@
+---
+# promtool unit tests for the site_services alert rules.
+#   promtool test rules tests/prometheus/site-services_test.yml
+#
+# These exist because several of these rules encode a *design decision* that
+# is easy to break silently later: an internet outage must not raise a DNS
+# page, orphan-mode NTP must not raise anything, and a label-matching mistake
+# can leave an alert permanently unable to fire (which is how the `and` in
+# AnycastStateMismatch was caught).
+rule_files:
+  - ../../ansible/roles/backup_host/files/monitoring/prometheus/rules/site-services.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── The core promise: an internet outage degrades, it does not page ──
+  - interval: 1m
+    name: internet down but internal zone healthy
+    input_series:
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="rpi.sco",instance="44.34.128.45"}'
+        values: "1+0x30"
+      - series: 'probe_success{job="blackbox-dns-recursion",kind="unicast",host="rpi.sco",instance="44.34.128.45"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-dns-internal",kind="anycast",host="anycast",instance="44.34.132.1"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: AnycastServiceDownDNS
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: AnycastInstanceDownDNS
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DnsRecursionFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: blackbox-dns-recursion
+              kind: unicast
+              host: rpi.sco
+              instance: 44.34.128.45
+            exp_annotations:
+              summary: "rpi.sco cannot resolve external names"
+              description: "Internal zone is fine, upstream recursion is not — internet path or upstream resolvers"
+
+  # ── Every resolver gone = page ──
+  - interval: 1m
+    name: all resolvers down
+    input_series:
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="rpi.sco",instance="44.34.128.45"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="pi.hil",instance="44.34.128.99"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastServiceDownDNS
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "No healthy internal resolver anywhere"
+              description: "Every site service host is failing the internal-zone DNS probe"
+
+  # ── One instance down while another serves: warn, never page ──
+  - interval: 1m
+    name: one instance down redundancy lost
+    input_series:
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="rpi.sco",instance="44.34.128.45"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="pi.hil",instance="44.34.128.99"}'
+        values: "1+0x30"
+      - series: 'probe_success{job="blackbox-dns-internal",kind="anycast",host="anycast",instance="44.34.132.1"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastServiceDownDNS
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AnycastInstanceDownDNS
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: blackbox-dns-internal
+              kind: unicast
+              host: rpi.sco
+              instance: 44.34.128.45
+            exp_annotations:
+              summary: "Resolver on rpi.sco unhealthy"
+              description: "Internal-zone probe to 44.34.128.45 failing — anycast redundancy reduced"
+
+  # ── Service healthy but the anycast address does not answer: routing ──
+  - interval: 1m
+    name: anycast address unreachable while instance healthy
+    input_series:
+      - series: 'probe_success{job="blackbox-dns-internal",kind="unicast",host="rpi.sco",instance="44.34.128.45"}'
+        values: "1+0x30"
+      - series: 'probe_success{job="blackbox-dns-internal",kind="anycast",host="anycast",instance="44.34.132.1"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastAddressUnreachable
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: blackbox-dns-internal
+              kind: anycast
+              host: anycast
+              instance: 44.34.132.1
+            exp_annotations:
+              summary: "Anycast DNS 44.34.132.1 unreachable while an instance is healthy"
+              description: "Routing/announcement problem: the service is up but the anycast address does not answer"
+
+  # ── Split brain: the legacy LEB resolver answers an anycast address ──
+  - interval: 1m
+    name: unexpected anycast origin
+    input_series:
+      - series: 'netops_anycast_origin_known{ip="44.34.132.1",origin="dns.leb",host="rpi.sco",instance="host.docker.internal:9100"}'
+        values: "0+0x30"
+      - series: 'netops_anycast_origin_known{ip="44.34.133.1",origin="rpi.sco",host="rpi.sco",instance="host.docker.internal:9100"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastUnexpectedOrigin
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              ip: 44.34.132.1
+              origin: dns.leb
+              host: rpi.sco
+              instance: host.docker.internal:9100
+            exp_annotations:
+              summary: "Anycast 44.34.132.1 answered by unknown instance 'dns.leb'"
+              description: "An unenrolled host is serving an anycast service address — possible split brain with the legacy LEB services"
+
+  # ── Zone data drift between hosts ──
+  - interval: 1m
+    name: zone data skew
+    input_series:
+      - series: 'netops_zone_render_info{hash="aaaa1111",host="rpi.sco",instance="a"}'
+        values: "1+0x60"
+      - series: 'netops_zone_render_info{hash="bbbb2222",host="pi.hil",instance="b"}'
+        values: "1+0x60"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ZoneDataSkew
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+            exp_annotations:
+              summary: "Service hosts are serving different internal zone data"
+              description: "netops_zone_render_info differs across hosts — a host missed a deploy; re-run playbooks/site_services.yml"
+
+  # ── Orphan mode is normal, not an incident ──
+  - interval: 1m
+    name: chrony orphan mode is informational
+    input_series:
+      - series: 'netops_chrony_local_mode{host="rpi.sco",instance="a"}'
+        values: "1+0x60"
+      - series: 'netops_service_healthy{service="ntp",host="rpi.sco",instance="a"}'
+        values: "1+0x60"
+      - series: 'netops_chrony_offset_seconds{host="rpi.sco",instance="a"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ChronyUnsynchronised
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: NtpServiceDownEverywhere
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: ChronyOrphanMode
+        exp_alerts:
+          - exp_labels:
+              severity: none
+              host: rpi.sco
+              instance: a
+            exp_annotations:
+              summary: "rpi.sco is serving time from its local reference"
+              description: "All upstreams unreachable — clocks stay coherent on the island but are free-running"
+
+  # ── Regression guard for the count(x == 1) == 0 trap: with every NTP
+  # instance unhealthy the filtered count is empty, so the rule has to be
+  # written with sum() or this alert silently never fires. ──
+  - interval: 1m
+    name: no healthy ntp anywhere
+    input_series:
+      - series: 'netops_service_healthy{service="ntp",host="rpi.sco",instance="a"}'
+        values: "0+0x60"
+      - series: 'netops_service_healthy{service="ntp",host="pi.hil",instance="b"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NtpServiceDownEverywhere
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "No healthy NTP server anywhere"
+              description: "Fleet clocks will drift — the failure mode that left sec1.sco two months behind"
+
+  # ── Announcement state disagreeing with health (the label-match trap) ──
+  - interval: 1m
+    name: announced while unhealthy
+    input_series:
+      - series: 'netops_anycast_announced{service="dns",ip="44.34.132.1",host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+      - series: 'netops_service_healthy{service="dns",host="rpi.sco",instance="a"}'
+        values: "0+0x30"
+      - series: 'netops_anycast_enabled{host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastStateMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              service: dns
+              ip: 44.34.132.1
+              host: rpi.sco
+              instance: a
+            exp_annotations:
+              summary: "Announcement state disagrees with health on rpi.sco"
+              description: "44.34.132.1 announced=1 while the health check says otherwise"
+
+  # ── M1: with anycast off, a stale address must not raise the mismatch ──
+  - interval: 1m
+    name: mismatch is suppressed while anycast is disabled
+    input_series:
+      - series: 'netops_anycast_announced{service="dns",ip="44.34.132.1",host="rpi.sco",instance="a"}'
+        values: "1+0x30"
+      - series: 'netops_service_healthy{service="dns",host="rpi.sco",instance="a"}'
+        values: "0+0x30"
+      - series: 'netops_anycast_enabled{host="rpi.sco",instance="a"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AnycastStateMismatch
+        exp_alerts: []
+
+  # ── The health script itself dying freezes announcements ──
+  - interval: 1m
+    name: health check stale
+    input_series:
+      - series: 'netops_site_services_last_run_timestamp_seconds{host="rpi.sco",instance="a"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SiteServicesHealthCheckStale
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host: rpi.sco
+              instance: a
+            exp_annotations:
+              summary: "site-services health check has not run in >5m on rpi.sco"
+              description: "Announcements are frozen at their last state — a failed service will NOT be withdrawn"

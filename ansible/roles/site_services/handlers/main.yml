@@ -1,0 +1,38 @@
+---
+- name: systemd reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: reload networkmanager
+  ansible.builtin.systemd:
+    name: NetworkManager
+    state: reloaded
+
+- name: restart unbound
+  ansible.builtin.systemd:
+    name: unbound
+    state: restarted
+
+- name: restart chrony
+  ansible.builtin.systemd:
+    name: chrony
+    state: restarted
+
+# frr reloads its integrated config without dropping adjacencies; a restart
+# would tear down OSPF and withdraw every announcement for the dead-interval.
+- name: reload frr
+  ansible.builtin.systemd:
+    name: frr
+    state: reloaded
+
+- name: restart frr
+  ansible.builtin.systemd:
+    name: frr
+    state: restarted
+
+# Reconverge announcements immediately after a config change instead of
+# waiting for the next timer tick.
+- name: run health check
+  ansible.builtin.systemd:
+    name: netops-anycast-health.service
+    state: started

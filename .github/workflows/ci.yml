@@ -46,11 +46,26 @@ jobs:
       - name: Render templates against the real inventory
         working-directory: ansible
         run: ansible-playbook playbooks/ci_render.yml
+      # The health script decides when a service address is withdrawn; a
+      # quoting bug there is a routing bug.
+      - name: shellcheck the rendered health script
+        run: shellcheck -s sh ansible/build/rendered/site-services/anycast-health.sh
+
       - name: promtool check rules
         run: >
           docker run --rm -v "$PWD/$PROM_DIR:/etc/prometheus:ro"
           --entrypoint promtool prom/prometheus:v3.14.0
           check rules /etc/prometheus/rules/alerts.yml
+          /etc/prometheus/rules/site-services.yml
+      # Unit-test the alert rules against synthetic series. Catches the
+      # label-matching and empty-vector traps that make a rule silently
+      # unable to fire — a check-rules pass proves only that it parses.
+      - name: promtool test rules
+        run: >
+          docker run --rm -v "$PWD:/repo:ro" -w /repo
+          --entrypoint promtool prom/prometheus:v3.14.0
+          test rules tests/prometheus/site-services_test.yml
+
       - name: promtool check config
         run: >
           docker run --rm -v "$PWD/$PROM_DIR:/etc/prometheus:ro"

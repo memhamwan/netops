@@ -1,0 +1,204 @@
+{
+  "uid": "site-services",
+  "title": "Site Services (DNS/NTP anycast)",
+  "tags": ["memhamwan", "dns", "ntp", "anycast"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Healthy resolvers",
+      "description": "Instances passing the internal-zone probe on their own address. Zero here means the network has no internal DNS.",
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(probe_success{job=\"blackbox-dns-internal\",kind=\"unicast\"} == 1) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 1},
+              {"color": "green", "value": 2}
+            ]
+          },
+          "color": {"mode": "thresholds"}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Healthy NTP",
+      "description": "chrony either disciplined or in orphan mode. The LEB outage left the fleet with none of these.",
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "count(netops_service_healthy{service=\"ntp\"} == 1) or vector(0)"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 1},
+              {"color": "green", "value": 2}
+            ]
+          },
+          "color": {"mode": "thresholds"}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Anycast",
+      "description": "0 = M1 (services run, nothing announced). 1 = announcing via OSPF.",
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max(netops_anycast_enabled) or vector(0)"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {"text": "off (unicast only)", "color": "text"},
+                "1": {"text": "announcing", "color": "green"}
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Anycast addresses answered by an unknown instance",
+      "description": "Non-zero = split brain: something we did not deploy is serving a service address (most likely the legacy LEB hosts returning).",
+      "gridPos": {"h": 5, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "count(netops_anycast_origin_known == 0) or vector(0)"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          },
+          "color": {"mode": "thresholds"}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Announced service addresses",
+      "description": "1 = the address is on the anycast interface and therefore redistributed into OSPF. Withdrawals and flaps show here.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "netops_anycast_announced",
+          "legendFormat": "{{host}} {{service}} {{ip}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 10}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "DNS probe success — per instance vs anycast",
+      "description": "unicast = one instance regardless of routing; anycast = what a client actually gets. anycast down while a unicast is up means a routing/announcement problem.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"blackbox-dns-internal\"}",
+          "legendFormat": "{{kind}} {{host}} {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "probe_success{job=\"blackbox-dns-recursion\",kind=\"unicast\"}",
+          "legendFormat": "recursion {{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 10}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Clock offset",
+      "description": "chrony system time offset per service host.",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "netops_chrony_offset_seconds", "legendFormat": "{{host}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Resolver query rate",
+      "description": "Queries, cache hits, and SERVFAILs per second. A rising SERVFAIL rate is the early sign of upstream trouble.",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "rate(netops_unbound_queries_total[5m])", "legendFormat": "{{host}} queries"},
+        {"refId": "B", "expr": "rate(netops_unbound_cache_hits_total[5m])", "legendFormat": "{{host}} cache hits"},
+        {"refId": "C", "expr": "rate(netops_unbound_servfail_total[5m])", "legendFormat": "{{host}} SERVFAIL"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "qps"}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Zone data versions in service",
+      "description": "One line = every host serving identical zone data. Two lines means a host missed a deploy (ZoneDataSkew).",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "count(count by (hash) (netops_zone_render_info))", "legendFormat": "distinct zone versions"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "none", "min": 0}, "overrides": []}
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+---
+# Internal DNS records that are NOT derived from the fleet inventory.
+#
+# Device A/PTR records come from `ip:` in hosts.yml — do not repeat them here.
+# This file is for service names, aliases, and anything else the internal
+# resolvers should answer authoritatively. Rendered into unbound local-data by
+# the site_services role, identically on every service host (git is the
+# cluster — there is no zone transfer).
+#
+# The zone is served `transparent`: names defined here (and device names from
+# the inventory) are answered locally; every other memhamwan.net name falls
+# through to the public Cloudflare zone. So do NOT list grafana/prometheus/
+# alertmanager here — those are public records with real TLS certs, and
+# shadowing them locally would break the Caddy vhosts.
+dns_extra_records:
+  # Service names for the anycast addresses themselves. Deliberately named
+  # after the service, not the host: they resolve to the anycast IP, which is
+  # whichever instance is nearest.
+  - {name: dns.memhamwan.net, type: A, value: 44.34.132.1}
+  - {name: dns2.memhamwan.net, type: A, value: 44.34.133.1}
+  - {name: ntp.memhamwan.net, type: A, value: 44.34.128.181}
+
+  # Legacy LEB service names, kept resolvable while those hosts are dark so
+  # existing configs referring to them by name don't NXDOMAIN. Revisit at M4
+  # when the legacy hosts are decommissioned (see the design doc).
+  - {name: ntp.leb.memhamwan.net, type: A, value: 44.34.128.181}

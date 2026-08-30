@@ -76,6 +76,7 @@
     rsync_opts:
       # rendered from inventory below — excluded so delete can't prune them
       - "--exclude=targets/icmp-*.yml"
+      - "--exclude=targets/dns-*.yml"
   notify: reload prometheus
 
 - name: Install monitoring configs
@@ -107,7 +108,7 @@
     src: "{{ item }}.j2"
     dest: "{{ netops_var }}/monitoring/prometheus/targets/{{ item }}"
     mode: "0644"
-  loop: [icmp-routeros.yml, icmp-infra.yml]
+  loop: [icmp-routeros.yml, icmp-infra.yml, dns-services.yml]
   notify: reload prometheus
 
 - name: Create data directories with container ownership

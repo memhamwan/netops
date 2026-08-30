@@ -1,0 +1,189 @@
+groups:
+  # Alerting for the anycast DNS/NTP service hosts (site_services role).
+  # Severity convention matches alerts.yml: page / warn / none.
+  #
+  # Two vantage points matter and mean different things:
+  #   kind="unicast" — one specific instance, independent of routing
+  #   kind="anycast" — what a client gets: nearest instance AND the route to it
+  - name: site-services-dns
+    rules:
+      # Every instance failing = the network has no internal DNS.
+      # sum(), not count(x == 1): a count over a filtered vector that matches
+      # nothing returns an EMPTY result, not 0 — so `count(...) == 0` can
+      # never fire, which would lose precisely this alert. sum() over the
+      # unfiltered 0/1 gauge is 0 when every instance is unhealthy, and the
+      # count() guard keeps it from firing when the series are simply absent
+      # (that case is SiteServicesMetricsMissing / BlackboxScrapeFailed).
+      - alert: AnycastServiceDownDNS
+        expr: >-
+          sum(probe_success{job="blackbox-dns-internal",kind="unicast"}) == 0
+          and count(probe_success{job="blackbox-dns-internal",kind="unicast"}) > 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "No healthy internal resolver anywhere"
+          description: "Every site service host is failing the internal-zone DNS probe"
+
+      # One instance down while another serves: clients are fine, redundancy
+      # is not. Warn rather than page.
+      - alert: AnycastInstanceDownDNS
+        expr: probe_success{job="blackbox-dns-internal",kind="unicast"} == 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Resolver on {{ $labels.host }} unhealthy"
+          description: "Internal-zone probe to {{ $labels.instance }} failing — anycast redundancy reduced"
+
+      # The client's-eye check: the anycast address is unreachable or wrong
+      # even though an instance is healthy → a routing problem, not a service
+      # problem (announcement withdrawn, adjacency down, filter dropping it).
+      - alert: AnycastAddressUnreachable
+        expr: >-
+          probe_success{job="blackbox-dns-internal",kind="anycast"} == 0
+          and on() count(probe_success{job="blackbox-dns-internal",kind="unicast"} == 1) > 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "Anycast DNS {{ $labels.instance }} unreachable while an instance is healthy"
+          description: "Routing/announcement problem: the service is up but the anycast address does not answer"
+
+      # Recursion is a degraded state, never a withdrawal condition: internal
+      # names still resolve.
+      - alert: DnsRecursionFailing
+        expr: >-
+          probe_success{job="blackbox-dns-recursion",kind="unicast"} == 0
+          and on(instance) probe_success{job="blackbox-dns-internal",kind="unicast"} == 1
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.host }} cannot resolve external names"
+          description: "Internal zone is fine, upstream recursion is not — internet path or upstream resolvers"
+
+      # THE SPLIT-BRAIN DETECTOR. An anycast address answered by something
+      # that is not an enrolled service host — most likely the legacy LEB
+      # resolvers coming back online with stale zone data. Must be live
+      # before LEB returns (see the design doc).
+      - alert: AnycastUnexpectedOrigin
+        expr: netops_anycast_origin_known == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Anycast {{ $labels.ip }} answered by unknown instance '{{ $labels.origin }}'"
+          description: "An unenrolled host is serving an anycast service address — possible split brain with the legacy LEB services"
+
+      # The "git is the cluster" failure mode: a host that missed a deploy
+      # answers from different zone data.
+      - alert: ZoneDataSkew
+        expr: count(count by (hash) (netops_zone_render_info)) > 1
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Service hosts are serving different internal zone data"
+          description: "netops_zone_render_info differs across hosts — a host missed a deploy; re-run playbooks/site_services.yml"
+
+  - name: site-services-ntp
+    rules:
+      # No blackbox NTP prober exists; chrony's own view is the signal.
+      - alert: ChronyUnsynchronised
+        expr: netops_service_healthy{service="ntp"} == 0
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "chrony on {{ $labels.host }} is not synchronised"
+          description: "Not disciplined and not in orphan mode — this host should not be serving time"
+
+      # sum(), not count(x == 1) — see the note on AnycastServiceDownDNS.
+      - alert: NtpServiceDownEverywhere
+        expr: >-
+          sum(netops_service_healthy{service="ntp"}) == 0
+          and count(netops_service_healthy{service="ntp"}) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "No healthy NTP server anywhere"
+          description: "Fleet clocks will drift — the failure mode that left sec1.sco two months behind"
+
+      # Expected while a site is islanded; informational so the timeline shows
+      # it during incident review.
+      - alert: ChronyOrphanMode
+        expr: netops_chrony_local_mode == 1
+        for: 30m
+        labels:
+          severity: none
+        annotations:
+          summary: "{{ $labels.host }} is serving time from its local reference"
+          description: "All upstreams unreachable — clocks stay coherent on the island but are free-running"
+
+      - alert: ChronyOffsetHigh
+        expr: abs(netops_chrony_offset_seconds) > 0.5
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.host }} clock offset above 500ms"
+
+  - name: site-services-announcement
+    rules:
+      # Health says one thing, the interface says another — the script or frr
+      # is not doing its job.
+      # `and on(instance)`, not a bare `and`: the left side carries ip/service
+      # labels that netops_anycast_enabled does not, and a bare `and` matches
+      # on the full label set — it would silently never fire.
+      - alert: AnycastStateMismatch
+        expr: >-
+          (netops_anycast_announced{service="dns"} != on(instance) group_left netops_service_healthy{service="dns"})
+          and on(instance) netops_anycast_enabled == 1
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Announcement state disagrees with health on {{ $labels.host }}"
+          description: "{{ $labels.ip }} announced={{ $value }} while the health check says otherwise"
+
+      - alert: AnycastFlapping
+        expr: changes(netops_anycast_since[30m]) > 4
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.ip }} announcement flapping on {{ $labels.host }}"
+          description: "More than four announce/withdraw transitions in 30m — clients are being bounced between instances"
+
+      # Reciprocal view: one host reports another as unhealthy. Independent of
+      # the monitoring host's own vantage point.
+      - alert: PeerServiceHostUnhealthy
+        expr: netops_peer_dns_healthy == 0
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.host }} cannot get a healthy answer from peer {{ $labels.peer }}"
+
+  - name: site-services-pipeline
+    rules:
+      # The health script is also the thing that would withdraw a dead
+      # service. If it stops running, announcements freeze in place.
+      - alert: SiteServicesHealthCheckStale
+        expr: time() - netops_site_services_last_run_timestamp_seconds > 300
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "site-services health check has not run in >5m on {{ $labels.host }}"
+          description: "Announcements are frozen at their last state — a failed service will NOT be withdrawn"
+
+      - alert: SiteServicesMetricsMissing
+        expr: absent(netops_site_services_last_run_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: page
+        annotations:
+          summary: "site-services metrics absent — health/announcement alerting is blind"

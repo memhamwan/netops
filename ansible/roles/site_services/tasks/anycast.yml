@@ -1,0 +1,98 @@
+---
+# The routing half. Everything here is inert while anycast_enabled is false
+# (M1): no frr, no dummy interface, nothing announced. The health timer is
+# installed either way and simply reports health instead of acting on it.
+
+- name: Anycast disabled — nothing is announced
+  ansible.builtin.debug:
+    msg: >-
+      anycast_enabled=false: unbound/chrony serve on this host's own address
+      only. No dummy interface, no frr, no OSPF adjacency, no announcement.
+  when: not (anycast_enabled | bool)
+
+- name: Anycast enabled
+  when: anycast_enabled | bool
+  block:
+    # Fail loudly rather than joining OSPF unauthenticated: the fleet's
+    # interface templates require MD5, so an unauthenticated speaker would
+    # produce the same "type mismatch" flood already diagnosed at HIL.
+    - name: OSPF MD5 key must come from sops
+      ansible.builtin.assert:
+        that:
+          - ospf_md5_key is defined
+          - ospf_md5_key | length > 0
+        fail_msg: >-
+          ospf_md5_key is not in secrets/secrets.sops.yaml. Add the fleet's
+          OSPF authentication key (`sops secrets/secrets.sops.yaml`) before
+          enabling anycast — see the role README.
+        quiet: true
+
+    - name: The OSPF interface must be named in the inventory
+      ansible.builtin.assert:
+        that: site_lan_interface is defined
+        fail_msg: "set site_lan_interface for {{ inventory_hostname }} in the inventory"
+        quiet: true
+
+    - name: Dummy interface unit (carries the service /32s)
+      ansible.builtin.template:
+        src: netops-anycast-link.service.j2
+        dest: /etc/systemd/system/netops-anycast-link.service
+        mode: "0644"
+      notify: systemd reload
+
+    # NM would otherwise take ownership of the dummy and can flush addresses
+    # the health script put there.
+    - name: NetworkManager leaves the anycast interface alone
+      ansible.builtin.copy:
+        content: |
+          # Managed by the netops site_services role.
+          [keyfile]
+          unmanaged-devices=interface-name:{{ anycast_interface }}
+        dest: /etc/NetworkManager/conf.d/91-netops-anycast.conf
+        mode: "0644"
+      when: nm_dir.stat.isdir | default(false)
+      notify: reload networkmanager
+
+    - name: Enable the dummy interface
+      ansible.builtin.systemd:
+        name: netops-anycast-link.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: FRR package
+      ansible.builtin.apt:
+        name: frr
+        state: present
+
+    # Debian ships every daemon disabled; only ospfd is wanted.
+    - name: Enable ospfd only
+      ansible.builtin.lineinfile:
+        path: /etc/frr/daemons
+        regexp: "^{{ item.daemon }}="
+        line: "{{ item.daemon }}={{ item.state }}"
+        mode: "0640"
+      loop:
+        - {daemon: ospfd, state: "yes"}
+        - {daemon: bgpd, state: "no"}
+        - {daemon: ripd, state: "no"}
+        - {daemon: isisd, state: "no"}
+      notify: restart frr
+
+    # no_log: the file contains the fleet OSPF MD5 key, and --diff would
+    # print it (the same reason the RouterOS exports get redacted).
+    - name: Install frr config
+      ansible.builtin.template:
+        src: frr.conf.j2
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: "0640"
+      no_log: true
+      notify: reload frr
+
+    - name: Enable frr
+      ansible.builtin.systemd:
+        name: frr
+        enabled: true
+        state: started

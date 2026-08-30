@@ -1,0 +1,87 @@
+---
+# site_services — recursive + internal DNS, NTP, and (gated) anycast.
+# See README.md in this role and docs/site-services-design.md.
+
+site_services_var: /var/lib/netops/site-services
+# node-exporter's textfile collector directory. On rpi.sco this is the same
+# directory the backup/oxidized metrics use (created by the backup_host role);
+# a service host that is not also the monitoring host needs its own
+# node-exporter pointed here.
+site_services_textfile_dir: /var/lib/netops/node-exporter
+
+# ── Anycast ──────────────────────────────────────────────────────────────
+# MASTER SWITCH. false (default) = M1: services listen and are healthy on the
+# host's own address, frr is not installed, nothing is announced, and the
+# health timer only reports. true = M2+: frr joins OSPF and the health timer
+# adds/removes the service addresses on the dummy interface.
+# Enabling requires -e anycast_confirm=true as well (see the playbook).
+anycast_enabled: false
+
+anycast_interface: anycast0
+
+# The legacy LEB service addresses, announced as /32s. Clients (router
+# `/ip dns`, DHCP scopes, RouterOS NTP clients) already point at these — that
+# is the whole point of reusing them. `service` selects which health check
+# gates the address.
+anycast_services:
+  - {name: dns-primary, service: dns, ip: 44.34.132.1}
+  - {name: dns-secondary, service: dns, ip: 44.34.133.1}
+  - {name: ntp-primary, service: ntp, ip: 44.34.128.181}
+  - {name: ntp-dhcp-primary, service: ntp, ip: 44.34.132.3}
+  - {name: ntp-dhcp-secondary, service: ntp, ip: 44.34.133.3}
+
+# ── DNS ──────────────────────────────────────────────────────────────────
+dns_zone: memhamwan.net
+# Reverse zones for the MemHamWAN allocation (44.34.128.0/21). PTRs are
+# generated from inventory IPs that fall inside them.
+dns_reverse_zones:
+  - 128.34.44.in-addr.arpa
+  - 129.34.44.in-addr.arpa
+  - 130.34.44.in-addr.arpa
+  - 131.34.44.in-addr.arpa
+  - 132.34.44.in-addr.arpa
+  - 133.34.44.in-addr.arpa
+  - 134.34.44.in-addr.arpa
+  - 135.34.44.in-addr.arpa
+
+# Who may query the resolvers. AMPRNet plus the RFC1918 ranges the site
+# routers hand out on their NAT/DHCP scopes (those clients get these same
+# resolver IPs from DHCP today). Everything else is refused — er1 additionally
+# drops forwarded :53 to the service IPs at the edge.
+dns_allowed_cidrs:
+  - 44.0.0.0/8
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+
+# Health probe: a name from the *internal* zone, so the check keeps passing
+# when the internet path is down (an internet outage must not withdraw the
+# resolvers — internal names still resolve and withdrawing everywhere would
+# leave the network with none). Kept in sync with the `dns_internal` module in
+# roles/backup_host/files/monitoring/blackbox/blackbox.yml.
+dns_probe_name: rpi.sco.memhamwan.net
+dns_probe_expect: 44.34.128.45
+# Recursion probe (external name): reported, alerted at warning, never
+# withdraws an address.
+dns_recursion_probe_name: cloudflare.com
+
+# ── NTP ──────────────────────────────────────────────────────────────────
+# Numeric upstreams: the same Cloudflare anycast addresses routeros_baseline
+# uses. Numeric on purpose — a DNS outage must not take out time sync.
+ntp_upstream_servers:
+  - 162.159.200.1
+  - 162.159.200.123
+ntp_upstream_pools:
+  - pool.ntp.org
+ntp_allowed_cidrs: "{{ dns_allowed_cidrs }}"
+# Orphan stratum: when every upstream is unreachable (site islanded), the
+# service hosts agree among themselves rather than going unsynchronised, so
+# log timestamps across the island stay comparable. Orphan mode is NOT a
+# withdrawal condition.
+ntp_orphan_stratum: 10
+
+# ── Host resolver ────────────────────────────────────────────────────────
+# Point the host itself at its own unbound. On rpi.sco this replaces the
+# Tailscale MagicDNS resolver currently in /etc/resolv.conf — see the role
+# README for the tailscaled caveat.
+manage_host_resolv: true

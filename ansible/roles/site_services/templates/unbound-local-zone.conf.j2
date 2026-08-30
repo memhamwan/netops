@@ -1,0 +1,30 @@
+# RENDERED by the netops site_services role from ansible/inventory/hosts.yml
+# and ansible/inventory/dns_extra_records.yml — do not edit on the host.
+#
+# This is the "clustered" authoritative data: rendered identically onto every
+# service host at deploy time, so the cluster is git and there is no zone
+# transfer, no primary, and no runtime state to diverge. The health script
+# exports a checksum of this file; a host that missed a deploy shows up as
+# zone skew in monitoring rather than as quietly different answers.
+#
+# `transparent`: names defined below are answered locally; every other
+# {{ dns_zone }} name (grafana/prometheus/alertmanager and the rest of the
+# public Cloudflare zone) falls through to normal recursion.
+server:
+    local-zone: "{{ dns_zone }}." transparent
+{% for zone in dns_reverse_zones %}
+    local-zone: "{{ zone }}." transparent
+{% endfor %}
+
+    # ── Fleet devices (from the inventory `ip:` fields) ──
+{% for host in groups['all'] | sort %}
+{% if hostvars[host].ip is defined %}
+    local-data: "{{ host }}. 300 IN A {{ hostvars[host].ip }}"
+    local-data-ptr: "{{ hostvars[host].ip }} {{ host }}"
+{% endif %}
+{% endfor %}
+
+    # ── Extra records (inventory/dns_extra_records.yml) ──
+{% for record in dns_extra_records | default([]) %}
+    local-data: "{{ record.name }}. {{ record.ttl | default(300) }} IN {{ record.type }} {{ record.value }}"
+{% endfor %}

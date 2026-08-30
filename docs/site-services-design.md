@@ -1,8 +1,11 @@
 # site_services — anycast DNS + NTP from site Pis (design & plan)
 
-**Status: DESIGN — no role exists yet, nothing has been deployed.** This doc
-is the review artifact for the design; the role itself comes as a follow-up PR
-once the open questions below are settled. The
+**Status: role implemented, DRAFT, never executed.** `ansible/roles/site_services/`
+and `playbooks/site_services.yml` now exist and are validated in CI (lint,
+template rendering against the real inventory, shellcheck, promtool rule unit
+tests) — but nothing has been run against a host, and anycast is off by
+default behind two switches. The open questions at the end are still open;
+they change configuration, not the shape of the role. The
 [execution gate](../ansible/roles/routeros_baseline/README.md) applies to every
 router-touching step, and the staged rollout below extends the same spirit to
 the Pi's routing daemon (an OSPF speaker can hurt the network as badly as a
@@ -154,8 +157,10 @@ OSPF-speaker idea is rejected outright.
 Announce **all five legacy IPs** from every service host: DNS on 44.34.132.1
 + 44.34.133.1, NTP on 44.34.128.181 + 44.34.132.3 + 44.34.133.3. Rationale:
 DHCP scopes hand out the pairs; "secondary" IPs answering from the same host
-is strictly better than a dead secondary. One /32 each, five dummy
-interfaces, DNS check gates the two DNS IPs, NTP check the three NTP IPs.
+is strictly better than a dead secondary. All five live as /32s on a single
+dummy interface (`anycast0`), each added and removed independently — the DNS
+check gates the two DNS addresses, the NTP check the three NTP ones, so DNS
+can be withdrawn while NTP keeps serving.
 
 **LEB's return:** the legacy hosts will presumably re-announce these IPs when
 LEB comes back — instant unplanned anycast. NTP tolerates that; DNS with
@@ -168,34 +173,50 @@ records). This is a standing action item, not a blocker for deployment.
 
 ## Role sketch
 
-New role `ansible/roles/site_services/` + playbook
-`playbooks/site_services.yml`, shaped like `backup_host` (native config files
-in `files/`/`templates/`, secrets from sops, handlers for reloads):
+Role `ansible/roles/site_services/` + playbook `playbooks/site_services.yml`,
+shaped like `backup_host` (native config in `files/`/`templates/`, secrets
+from sops, handlers for reloads). See the
+[role README](../ansible/roles/site_services/README.md) for the runbook and
+reviewer notes.
 
 ```
 ansible/roles/site_services/
-  defaults/main.yml        # anycast_services list, acls, upstreams, zone name
-  tasks/main.yml           # packages, resolv.conf, per-service includes
-  tasks/{unbound,chrony,frr,healthcheck}.yml
+  defaults/main.yml        # anycast_services, ACLs, upstreams, probe name
+  tasks/main.yml           # packages, NM detection, per-service includes
+  tasks/{unbound,chrony,anycast,healthcheck}.yml
   templates/
-    unbound-local-zone.conf.j2   # rendered from inventory + dns_extra_records
-    unbound.conf.j2  chrony.conf.j2  frr.conf.j2
-    anycast-health.sh.j2         # the withdraw script
-  files/anycast-health.{service,timer}
-  README.md                # DRAFT marker + runbook, same convention as routeros_baseline
+    unbound-netops.conf.j2       # resolver: ACLs, DNSSEC, interface-automatic
+    unbound-local-zone.conf.j2   # zone data from inventory + dns_extra_records
+    chrony.conf.j2  frr.conf.j2
+    netops-anycast-link.service.j2   # the anycast0 dummy
+    anycast-health.sh.j2             # health → announce/withdraw → metrics
+  files/netops-anycast-health.{service,timer}
+  README.md                # DRAFT marker, runbook, reviewer notes
 ```
+
+**Two switches, not one.** `anycast_enabled` defaults to false: unbound and
+chrony serve on the host's own address, the health timer runs and exports
+every metric, but frr is not installed and no address is ever touched. Turning
+it on additionally requires `-e anycast_confirm=true`, enforced by the
+playbook — announcing addresses the whole fleet points at can never be a side
+effect of a routine redeploy. CI asserts both variants of the health script
+render correctly, so the M1 guarantee is tested rather than assumed.
 
 Inventory changes:
 
-- new group `service_hosts`: rpi.sco now; the HIL Pi once onboarded (static
-  44net IP, port-222 sshd, inventory entry — it needs a proper hostname; it's
-  currently only a tailnet name, which the no-tailnet rule won't accept).
-- `group_vars/service_hosts.yml`: `anycast_services` (ip, proto, healthcheck
-  group), `site_lan_interface`/`ospf_md5_key` per host vars.
+- new group `service_hosts`: rpi.sco now (with `site_lan_interface: eth0`);
+  the HIL Pi once onboarded (static 44net IP, port-222 sshd, inventory entry —
+  it needs a proper hostname; it's currently only a tailnet name, which the
+  no-tailnet rule won't accept).
 - `dns_extra_records.yml` next to the inventory for non-device internal
   records (the inventory `ip` fields already cover device A/PTR records).
 
-Secrets added to sops: the OSPF MD5 key. (No new device credentials.)
+**Secrets:** the role needs `ospf_md5_key` in sops before anycast can be
+enabled, and it is deliberately *not* committed — the fleet's key is the old
+shared one and which value is current on every device is unverified. The role
+asserts its presence rather than joining OSPF unauthenticated (which would
+reproduce the "type mismatch" adjacency flood already diagnosed at HIL). No
+new device credentials.
 
 Monitoring changes land in the existing `backup_host` role (Prometheus
 config, blackbox modules, alert rules, dashboards) plus textfile collectors
@@ -236,12 +257,18 @@ it exports exactly that: `anycast_announced{service,ip}` 0/1, per-check
 pass/fail, and a last-transition timestamp, all via textfile. This gives
 Prometheus the withdraw/announce history without scraping frr.
 
-The router-side view closes the loop: mktxp already collects from every
-router, and the routers' routing tables are where anycast reality lives. A
-small recording-rule layer over the route metrics (or, if mktxp's routes
-collector proves too coarse, a scripted `/routing route print` check on one
-router per site, gated like all router access) answers: *does each site
-currently have a route to each service /32, and from how many origins?*
+What is implemented instead of a router-table view: `AnycastAddressUnreachable`
+compares the two vantage points directly — the anycast address failing its
+probe *while* at least one instance is healthy on its own address is, by
+elimination, a routing or announcement problem. That needs no router access
+and no new collector.
+
+**Deferred:** the per-site route census (*does each site have a route to each
+service /32, and from how many origins?*) via mktxp's route metrics or a
+gated `/routing route print`. It is the only thing that distinguishes "SCO
+can't reach the service" from "the announcement is missing network-wide", and
+it is the natural companion to the M4 fleet-side route filters — so it lands
+with them, not before.
 
 ### Layer 3 — cross-site client's-eye view (from M3)
 
@@ -254,17 +281,32 @@ querying the other host's unicast chrony and comparing offsets.
 
 ### Alert rules (Alertmanager → Discord, existing severity conventions)
 
+As implemented in `rules/site-services.yml` (severity uses the existing
+`page` / `warn` / `none` convention):
+
 | Alert | Condition | Severity |
 |---|---|---|
-| AnycastServiceDown | all instances of a service failing their health check | critical |
-| AnycastInstanceDown | one instance unhealthy while another serves | warning (lost redundancy, clients fine) |
-| AnycastRouteMissing | a site's router has no route to a service /32 while ≥1 instance announces | critical |
-| AnycastUnexpectedOrigin | `hostname.bind` answer not in the known host set, or route origin count exceeds enrolled hosts | critical — this is the **LEB-came-back split-brain detector** |
-| AnycastFlapping | `changes(anycast_announced[15m]) > 4` | warning |
-| AnycastStateMismatch | health checks pass but address not announced (or inverse) for >2 min | warning (script/frr inconsistency) |
-| DnsRecursionFailing | internal-zone probe OK but external probe failing | warning (upstream path, not the instance) |
-| ChronyUnsynced / ChronyOrphanActive | no sources and not orphan / orphan active | warning / info (orphan = site islanded, working as designed) |
-| ZoneDataSkew | `zone_render_hash` differs across service hosts beyond a deploy window | warning (the "git cluster" drifted — a host missed a deploy) |
+| AnycastServiceDownDNS | no instance passing the internal-zone probe | page |
+| AnycastInstanceDownDNS | one instance unhealthy while another serves | warn (redundancy lost, clients fine) |
+| AnycastAddressUnreachable | anycast address not answering while an instance is healthy | page (routing, not service) |
+| AnycastUnexpectedOrigin | `hostname.bind` answer not an enrolled service host | page — the **LEB-came-back split-brain detector** |
+| DnsRecursionFailing | internal probe OK, external probe failing | warn (upstream path, never withdraws) |
+| ZoneDataSkew | `netops_zone_render_info` hash differs across hosts >30m | warn (a host missed a deploy) |
+| ChronyUnsynchronised | chrony neither disciplined nor in orphan mode | warn |
+| NtpServiceDownEverywhere | no healthy NTP instance anywhere | page |
+| ChronyOrphanMode | serving from the local reference | none (islanded — working as designed) |
+| ChronyOffsetHigh | \|offset\| > 500 ms | warn |
+| AnycastStateMismatch | announced state ≠ health, while anycast is enabled | warn (script/frr inconsistency) |
+| AnycastFlapping | >4 announce/withdraw transitions in 30m | warn |
+| PeerServiceHostUnhealthy | one service host cannot get a healthy answer from another | warn |
+| SiteServicesHealthCheckStale | health script hasn't run in >5m | page — **announcements are frozen; a dead service will not be withdrawn** |
+| SiteServicesMetricsMissing | textfile metrics absent >1h | page (health/announcement alerting is blind) |
+
+Two of these were written in the obvious way, parsed cleanly, and **could
+never have fired**: `count(x == 1) == 0` yields an empty vector when nothing
+matches, so "no healthy resolver/NTP anywhere" — the two most important
+alerts here — were silently dead until the unit tests caught them. They now
+use `sum()` with a `count() > 0` guard, and the test file pins that behaviour.
 
 Logs need no new pipeline: unbound/chrony/frr log to journald, which Alloy
 already ships to Loki. FRR adjacency changes get a dashboard query, not an
@@ -289,6 +331,29 @@ hook for a dead-man's switch; the decision on an off-network receiver was
 deliberately deferred (2026-08-29) and this design doesn't reopen it — it
 just notes that each service anycast to rpi.sco raises the cost of that
 silent-failure mode.
+
+### What is already wired up
+
+Implemented alongside the role (all validated in CI, none of it running yet):
+
+- blackbox `dns_internal` / `dns_recursion` modules; two Prometheus jobs over
+  `targets/dns-services.yml`, which is rendered from the inventory with
+  `kind="unicast"` per host and `kind="anycast"` for the shared addresses.
+- `rules/site-services.yml` — the alert table below, 15 rules.
+- a "Site Services" Grafana dashboard (file-managed like the others):
+  healthy-instance counts, the announce/withdraw timeline, unicast-vs-anycast
+  probe comparison, clock offsets, resolver query/SERVFAIL rates, and a
+  distinct-zone-versions panel.
+- textfile metrics from the health script:
+  `netops_service_healthy`, `netops_anycast_announced`, `netops_anycast_since`,
+  `netops_anycast_enabled`, `netops_anycast_origin_known`,
+  `netops_peer_dns_healthy`, `netops_chrony_*`, `netops_unbound_*`,
+  `netops_zone_render_info`, `netops_site_services_last_run_timestamp_seconds`.
+- `tests/prometheus/site-services_test.yml` — promtool unit tests asserting
+  the rules actually fire (and, as importantly, do *not* fire: an internet
+  outage raises only the recursion warning, and orphan-mode NTP raises only
+  the informational alert). Writing these caught two rules that would have
+  parsed fine and never fired — see the note on `AnycastServiceDownDNS`.
 
 ### Milestone mapping
 

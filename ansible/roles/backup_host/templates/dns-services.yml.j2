@@ -1,0 +1,12 @@
+# RENDERED from ansible/inventory/hosts.yml — do not edit by hand.
+# Two vantage points per service: each host's OWN address (per-instance truth,
+# independent of routing) and the shared anycast addresses (what a client
+# actually gets — whichever instance is nearest).
+{% for host in groups['service_hosts'] | default([]) | sort %}
+- labels: {service: dns, kind: unicast, host: {{ host | replace('.memhamwan.net', '') }}, site: {{ hostvars[host].site | default('unknown') }}}
+  targets: [{{ hostvars[host].ip | default(host) }}]
+{% endfor %}
+{% for service in site_services_anycast_dns_ips %}
+- labels: {service: dns, kind: anycast, host: anycast, site: anycast}
+  targets: [{{ service }}]
+{% endfor %}

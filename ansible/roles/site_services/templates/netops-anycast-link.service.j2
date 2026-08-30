@@ -1,0 +1,23 @@
+[Unit]
+# RENDERED by the netops site_services role — do not edit on the host.
+# Creates the dummy interface that carries the anycast service /32s. The
+# addresses themselves are added/removed by netops-anycast-health.service
+# based on service health — this unit only provides the interface.
+Description=netops anycast dummy interface
+After=network-pre.target
+Wants=network-pre.target
+Before=frr.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Start from a clean link: a leftover interface from a previous run could
+# still hold addresses for services that are now unhealthy. The health timer
+# re-adds whatever should be there within one interval.
+ExecStartPre=-/sbin/ip link del {{ anycast_interface }}
+ExecStart=/sbin/ip link add {{ anycast_interface }} type dummy
+ExecStart=/sbin/ip link set {{ anycast_interface }} up
+ExecStop=-/sbin/ip link del {{ anycast_interface }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,37 @@
+---
+# Deploy DNS + NTP (and, when explicitly enabled, anycast) to the site
+# service hosts. Not router config — but enabling anycast makes this host an
+# OSPF speaker on the site LAN, so that step carries its own confirmation
+# flag on top of PR review. See docs/site-services-design.md.
+#
+#   ansible-playbook playbooks/site_services.yml                  # M1: serve, announce nothing
+#   ansible-playbook playbooks/site_services.yml \
+#     -e anycast_enabled=true -e anycast_confirm=true             # M2+: announce
+- name: Deploy site network services
+  hosts: service_hosts
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Load secrets from sops
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      delegate_to: localhost
+      become: false
+
+    - name: Load extra DNS records
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../inventory/dns_extra_records.yml"
+
+    # Announcing means joining OSPF and claiming addresses the whole fleet
+    # points at. Requiring a second, explicit flag keeps that from ever being
+    # a side effect of a routine redeploy.
+    - name: Enabling anycast requires explicit confirmation
+      ansible.builtin.assert:
+        that: anycast_confirm | default(false) | bool
+        fail_msg: >-
+          anycast_enabled is true but anycast_confirm is not set. Re-run with
+          -e anycast_confirm=true once the change is intended and reviewed.
+        quiet: true
+      when: anycast_enabled | default(false) | bool
+  roles:
+    - site_services

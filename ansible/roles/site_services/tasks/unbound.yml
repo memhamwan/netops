@@ -1,0 +1,81 @@
+---
+# Recursive resolver + authoritative-ish local data for the internal zone.
+# Debian's package auto-includes /etc/unbound/unbound.conf.d/*.conf.
+
+# systemd-resolved's stub listener holds 127.0.0.53:53, which collides with
+# unbound's wildcard bind — and it is a second resolver on the host with its
+# own idea of upstreams, exactly the ambiguity this role removes.
+- name: Disable systemd-resolved (unbound is the resolver on this host)
+  ansible.builtin.systemd:
+    name: systemd-resolved.service
+    enabled: false
+    state: stopped
+    masked: true
+  failed_when: false
+
+# unbound-resolvconf rewrites /etc/resolv.conf to 127.0.0.1 on its own
+# schedule and fights whatever else manages the file. We set resolv.conf
+# explicitly below, so take this out of the picture.
+- name: Disable unbound-resolvconf (we manage resolv.conf ourselves)
+  ansible.builtin.systemd:
+    name: unbound-resolvconf.service
+    enabled: false
+    state: stopped
+    masked: true
+  failed_when: false
+
+- name: Install unbound server config
+  ansible.builtin.template:
+    src: unbound-netops.conf.j2
+    dest: /etc/unbound/unbound.conf.d/netops.conf
+    mode: "0644"
+    validate: unbound-checkconf %s
+  notify: restart unbound
+
+# Rendered from the inventory (device A/PTR from `ip:`) plus
+# inventory/dns_extra_records.yml — identical on every service host. The
+# checksum of this file is exported as a metric so a host that missed a
+# deploy shows up as zone skew rather than as silently different answers.
+- name: Render internal zone data from inventory
+  ansible.builtin.template:
+    src: unbound-local-zone.conf.j2
+    dest: /etc/unbound/unbound.conf.d/netops-zone.conf
+    mode: "0644"
+    validate: unbound-checkconf %s
+  notify: restart unbound
+
+- name: Enable unbound
+  ansible.builtin.systemd:
+    name: unbound
+    enabled: true
+    state: started
+
+# Deliberately after unbound is up: pointing the host at a resolver that
+# isn't listening yet would break the rest of the play.
+- name: Point the host at its own resolver
+  when: manage_host_resolv | bool
+  block:
+    # NM's default resolv.conf handling would put the DHCP/tailscale resolver
+    # back; dns=none hands the file to us.
+    - name: NetworkManager must not rewrite resolv.conf
+      ansible.builtin.copy:
+        content: |
+          # Managed by the netops site_services role.
+          # The host resolves via its own unbound (127.0.0.1).
+          [main]
+          dns=none
+        dest: /etc/NetworkManager/conf.d/90-netops-dns.conf
+        mode: "0644"
+      when: nm_dir.stat.isdir | default(false)
+      notify: reload networkmanager
+
+    - name: Write resolv.conf
+      ansible.builtin.copy:
+        content: |
+          # Managed by the netops site_services role.
+          nameserver 127.0.0.1
+          search {{ dns_zone }}
+          options timeout:2 attempts:2
+        dest: /etc/resolv.conf
+        mode: "0644"
+        follow: false

@@ -32,6 +32,7 @@
         - router.db
         - icmp-routeros.yml
         - icmp-infra.yml
+        - dns-services.yml
         - mktxp.conf
         - caddy-auth.snippet
         - config.alloy
@@ -44,3 +45,86 @@
       loop:
         - icmp-routeros.yml
         - icmp-infra.yml
+        - dns-services.yml
+
+# Same idea for site_services: render against the real service host's vars so
+# the zone data, frr config, and health script are proven to template. Runs
+# with connection: local — nothing is sent to the host.
+- name: Render site_services templates for validation
+  hosts: service_hosts
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build/rendered/site-services"
+    ospf_md5_key: dummy-key-for-render
+  tasks:
+    - name: Load site_services defaults + extra DNS records
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../roles/site_services/defaults/main.yml"
+        - "{{ playbook_dir }}/../inventory/dns_extra_records.yml"
+
+    # After include_vars, which outranks play vars: render the anycast-enabled
+    # variant, since it is the superset (frr config exists only in that state).
+    - name: Render the anycast-enabled variant
+      ansible.builtin.set_fact:
+        anycast_enabled: true
+
+    - name: Render directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render templates
+      ansible.builtin.template:
+        src: "../roles/site_services/templates/{{ item.src }}.j2"
+        dest: "{{ render_dir }}/{{ item.dest | default(item.src) }}"
+        mode: "0644"
+      loop:
+        - {src: unbound-netops.conf}
+        - {src: unbound-local-zone.conf}
+        - {src: chrony.conf}
+        - {src: frr.conf}
+        - {src: netops-anycast-link.service}
+        - {src: anycast-health.sh}
+
+    - name: The rendered zone data covers the fleet and the extra records
+      ansible.builtin.assert:
+        that:
+          - zone_text is search('r1.sco.memhamwan.net. 300 IN A 44.34.128.33')
+          - "zone_text is search('local-data-ptr: .44.34.128.45 rpi.sco.memhamwan.net.')"
+          - zone_text is search('ntp.memhamwan.net. 300 IN A 44.34.128.181')
+        quiet: true
+      vars:
+        zone_text: "{{ lookup('file', render_dir ~ '/unbound-local-zone.conf') }}"
+
+    # The M1 guarantee, asserted rather than assumed: with anycast off the
+    # script cannot touch an address, and with it on it can.
+    - name: The health script honours the anycast switch in both directions
+      ansible.builtin.assert:
+        that:
+          - "'ANYCAST_ENABLED=0' in disabled_script"
+          - "'ANYCAST_ENABLED=1' in enabled_script"
+          - "'44.34.132.1 44.34.133.1' in enabled_script"
+        quiet: true
+      vars:
+        script: ../roles/site_services/templates/anycast-health.sh.j2
+        disabled_script: "{{ lookup('template', script, template_vars={'anycast_enabled': false}) }}"
+        enabled_script: "{{ lookup('template', script, template_vars={'anycast_enabled': true}) }}"
+
+    # frr must never redistribute anything beyond the service /32s, and must
+    # never win a DR election on the site LAN.
+    - name: The frr config keeps its guardrails
+      ansible.builtin.assert:
+        that:
+          - frr_text is search('ip ospf priority 0')
+          - frr_text is search('redistribute connected metric-type 1 route-map ANYCAST-ONLY')
+          - frr_text is search('no default-information originate')
+          - frr_text is search('route-map ANYCAST-ONLY deny 20')
+          - frr_text is search('ip prefix-list ANYCAST-SERVICES seq 30 deny any')
+        quiet: true
+      vars:
+        frr_text: "{{ lookup('file', render_dir ~ '/frr.conf') }}"
