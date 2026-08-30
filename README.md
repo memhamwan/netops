@@ -113,6 +113,19 @@ To add a recipient: add their `age1...` public key to `.sops.yaml`, then
 DNS management). The Oxidized fleet list, blackbox targets, and mktxp config
 are all templated from it at deploy time.
 
+**Workstation setup (once per clone):** the controller toolchain (ansible-core,
+librouteros for the RouterOS API modules, lint) lives in a uv-managed project
+venv — never in brew/system pythons, so there's no guessing which of a mac's
+several interpreters ansible will use. direnv puts it on PATH automatically.
+
+```sh
+brew install uv sops age direnv   # once per machine
+cd ansible
+uv venv && uv pip install -r requirements.txt
+ansible-galaxy collection install -r requirements.yml
+cd .. && direnv allow
+```
+
 Deploy/refresh the backup host (rpi.sco):
 
 ```sh

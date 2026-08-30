@@ -14,6 +14,9 @@
     # ansible_connection (network_cli) overrides play keywords, and the api
     # modules must run on the controller
     ansible_connection: local
+    # run modules under the python that runs ansible (the project venv) —
+    # never the interpreter discovery happens to find on the machine
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   module_defaults:
     group/community.routeros.api:
       hostname: "{{ inventory_hostname }}"
@@ -50,9 +53,10 @@
         that: "'librouteros' not in librouteros_check.not_found"
         fail_msg: >-
           librouteros is not importable by {{ librouteros_check.python }} —
-          the interpreter ansible runs modules under. Install it for exactly
-          that interpreter:
-          `{{ librouteros_check.python }} -m pip install --break-system-packages librouteros`
+          the interpreter ansible runs modules under. You're probably not in
+          the project venv: `cd ansible && uv venv && uv pip install -r
+          requirements.txt`, then rerun from a shell where direnv has put
+          ansible/.venv/bin on PATH (see README).
       run_once: true
     - name: Load secrets from sops
       community.sops.load_vars:

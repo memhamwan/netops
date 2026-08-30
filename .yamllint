@@ -4,6 +4,7 @@ extends: default
 ignore: |
   secrets/
   ansible/build/
+  ansible/.venv/
 
 rules:
   line-length: disable
