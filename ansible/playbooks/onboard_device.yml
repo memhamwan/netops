@@ -107,3 +107,18 @@
           - '/user set [find name=mktxp] password="{{ mktxp_password }}"'
       changed_when: true
       no_log: true
+
+    # converge, not just create-if-absent: pre-existing groups/users with
+    # drifted policies or membership must end up in the expected state
+    # (set on an empty [find] is a RouterOS no-op, so this is safe even if
+    # an account doesn't exist on this device)
+    - name: Converge group policies and user membership
+      community.routeros.command:
+        commands:
+          - '/user group set [find name=netops-backup-ro] policy=ssh,read'
+          - '/user group set [find name=netops-backup-full] policy=ssh,read,sensitive'
+          - '/user group set [find name=mktxp_group] policy=api,read'
+          - '/user set [find name=oxidized] group=netops-backup-ro'
+          - '/user set [find name=oxidized-full] group=netops-backup-full'
+          - '/user set [find name=mktxp] group=mktxp_group'
+      changed_when: true

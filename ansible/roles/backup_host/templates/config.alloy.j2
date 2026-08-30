@@ -55,11 +55,9 @@ loki.relabel "syslog" {
 		source_labels = ["__syslog_message_severity"]
 		target_label  = "severity"
 	}
-	// RouterOS puts its topic list ("system,error,critical") in the syslog tag
-	rule {
-		source_labels = ["__syslog_message_app_name"]
-		target_label  = "topics"
-	}
+	// the raw RouterOS topic list (syslog tag) is deliberately NOT kept as a
+	// label: it's untrusted, unbounded input and each distinct value would
+	// mint a loki stream — the bounded `topic` label below covers queries
 }
 
 loki.process "routeros" {
@@ -72,9 +70,11 @@ loki.process "routeros" {
 		expression = "login failure for user (\\S+)"
 		replace    = "<redacted>"
 	}
-	// first topic only, to bound label cardinality
+	// first topic only, and only from a fixed vocabulary, so an
+	// unauthenticated sender can't mint arbitrary label values (streams);
+	// lines with other topics simply carry no topic label
 	stage.regex {
-		expression = "^(?P<topic>[a-z0-9-]+)[, ]"
+		expression = "^(?P<topic>(system|error|warning|critical|info|account|interface|firewall|ospf|route|dhcp|wireless|dns|ntp|ssh|script|state|timer|vrrp|bridge|certificate|event|radius|watchdog|l2tp|ipsec|pppoe))[, ]"
 	}
 	stage.labels {
 		values = { topic = "" }

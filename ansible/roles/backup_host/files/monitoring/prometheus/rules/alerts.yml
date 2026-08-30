@@ -81,10 +81,15 @@ groups:
           severity: page
         annotations:
           summary: "nightly encrypted backup hasn't completed a run in >26h"
-      # dark sites fail export every night by design; only page for devices
-      # that answer ICMP yet still can't be backed up (auth/key breakage)
+      # dark sites fail export every night by design; only warn for devices
+      # that answer ICMP yet still can't be backed up (auth/key breakage).
+      # Arithmetic join so `site` comes from the probe series — the textfile
+      # metric inherits the collector's own site label, which would misgroup
       - alert: BackupExportFailing
-        expr: (netops_full_backup_host_failed == 1) and on(device) (probe_success{job="blackbox-icmp"} == 1)
+        expr: >-
+          sum by (device) (netops_full_backup_host_failed)
+          * on(device) group_left(site)
+          sum by (device, site) (probe_success{job="blackbox-icmp"}) == 1
         for: 1h
         labels:
           severity: warn

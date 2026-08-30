@@ -41,6 +41,16 @@
       changed_when: true
       no_log: true
 
+    # converge, not just create-if-absent: a pre-existing group with the
+    # wrong policy or a pre-existing user outside the group would strand the
+    # API baseline at authentication — and it can't fix that itself
+    - name: Converge group policy and user membership
+      community.routeros.command:
+        commands:
+          - '/user group set [find name=netops-ansible] policy=api,ssh,ftp,read,write,policy,test'
+          - '/user set [find name=ansible] group=netops-ansible'
+      changed_when: true
+
     - name: Upload ansible public key
       ansible.netcommon.net_put:
         src: "{{ playbook_dir }}/../roles/routeros_baseline/files/ansible.pub"

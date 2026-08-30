@@ -31,13 +31,16 @@ limits_config:
   reject_old_samples: true
   reject_old_samples_max_age: 168h
   # syslog is unauthenticated: a sender spoofing an allowlisted hostname can
-  # inject, but these caps keep it from flooding the SD card. RouterOS lines
-  # are short — the whole fleet's real volume is far below these.
-  ingestion_rate_mb: 8
-  ingestion_burst_size_mb: 16
-  per_stream_rate_limit: 2MB
-  per_stream_rate_limit_burst: 8MB
+  # inject. Measured fleet volume is ~0.6 MB/hour (~170 B/s), so these caps
+  # are still >1000x real traffic. Single-binary loki has no hard disk
+  # quota — the caps bound the fill *rate* (a max-rate flood needs days, not
+  # hours, to threaten the disk) and MonitoringHostDiskFull is the backstop.
+  ingestion_rate_mb: 0.25
+  ingestion_burst_size_mb: 1
+  per_stream_rate_limit: 128KB
+  per_stream_rate_limit_burst: 512KB
   max_line_size: 16KB
+  max_global_streams_per_user: 5000
 
 compactor:
   working_directory: /loki/compactor
