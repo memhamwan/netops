@@ -197,11 +197,110 @@ Inventory changes:
 
 Secrets added to sops: the OSPF MD5 key. (No new device credentials.)
 
-Monitoring additions (backup_host role): blackbox `dns_query` module probing
-the anycast DNS IPs *and* each host's unicast IP (anycast up ≠ every instance
-up); alert rules for instance-down-while-anycast-up, withdraw-flapping, and
-chrony unsynchronized (via the textfile metrics); Grafana panel on the
-Network Overview dashboard.
+Monitoring changes land in the existing `backup_host` role (Prometheus
+config, blackbox modules, alert rules, dashboards) plus textfile collectors
+in this role — full strategy in the next section.
+
+## Monitoring & alerting strategy
+
+Everything rides the existing stack (Prometheus + blackbox + Alertmanager →
+Discord, Loki/Alloy for logs, Grafana) — no new monitoring systems. What *is*
+new is that anycast breaks the usual "probe the IP" model: a probe to
+44.34.132.1 from the monitoring host tells you only what the *nearest*
+instance is doing, and the monitoring host is itself one of the service
+hosts. The strategy is layered to keep those vantage points honest.
+
+### Layer 1 — per-instance truth (unicast)
+
+The ground truth is each instance probed by its unicast address,
+independently of routing:
+
+- blackbox `dns_query` modules against every service host's unicast IP:
+  one module resolving a known internal name with `validate_answer_rrs`
+  (correctness, answerable even when internet is out) and one resolving an
+  external name (recursion health, alerted at lower severity — internet-out
+  is not an instance failure).
+- NTP has no blackbox prober. Each service host's health timer already runs
+  `chronyc tracking`; it exports the results (sync state, offset, stratum,
+  orphan-mode flag) via node-exporter's textfile collector. On rpi.sco the
+  existing containerized node-exporter picks up the textfile directory; the
+  HIL Pi gets a native node-exporter as part of onboarding.
+- unbound stats (`unbound-control stats_noreset` → textfile: query rate,
+  cache hit ratio, SERVFAIL rate) — trend data for dashboards, and a rising
+  SERVFAIL rate is the early sign of upstream trouble.
+
+### Layer 2 — announcement state (the anycast-specific part)
+
+The health script is the single authority on what *should* be announced, and
+it exports exactly that: `anycast_announced{service,ip}` 0/1, per-check
+pass/fail, and a last-transition timestamp, all via textfile. This gives
+Prometheus the withdraw/announce history without scraping frr.
+
+The router-side view closes the loop: mktxp already collects from every
+router, and the routers' routing tables are where anycast reality lives. A
+small recording-rule layer over the route metrics (or, if mktxp's routes
+collector proves too coarse, a scripted `/routing route print` check on one
+router per site, gated like all router access) answers: *does each site
+currently have a route to each service /32, and from how many origins?*
+
+### Layer 3 — cross-site client's-eye view (from M3)
+
+Each service host also probes the *anycast* IPs and records which instance
+answered, using unbound's `hostname.bind` CH TXT identity (set per-host by
+the role). Exported as `anycast_origin_info{from, service, origin}`. With one
+site this is a self-check; with two (M3) it becomes reciprocal monitoring —
+HIL sees SCO's failures and vice versa — and the same mechanism does NTP by
+querying the other host's unicast chrony and comparing offsets.
+
+### Alert rules (Alertmanager → Discord, existing severity conventions)
+
+| Alert | Condition | Severity |
+|---|---|---|
+| AnycastServiceDown | all instances of a service failing their health check | critical |
+| AnycastInstanceDown | one instance unhealthy while another serves | warning (lost redundancy, clients fine) |
+| AnycastRouteMissing | a site's router has no route to a service /32 while ≥1 instance announces | critical |
+| AnycastUnexpectedOrigin | `hostname.bind` answer not in the known host set, or route origin count exceeds enrolled hosts | critical — this is the **LEB-came-back split-brain detector** |
+| AnycastFlapping | `changes(anycast_announced[15m]) > 4` | warning |
+| AnycastStateMismatch | health checks pass but address not announced (or inverse) for >2 min | warning (script/frr inconsistency) |
+| DnsRecursionFailing | internal-zone probe OK but external probe failing | warning (upstream path, not the instance) |
+| ChronyUnsynced / ChronyOrphanActive | no sources and not orphan / orphan active | warning / info (orphan = site islanded, working as designed) |
+| ZoneDataSkew | `zone_render_hash` differs across service hosts beyond a deploy window | warning (the "git cluster" drifted — a host missed a deploy) |
+
+Logs need no new pipeline: unbound/chrony/frr log to journald, which Alloy
+already ships to Loki. FRR adjacency changes get a dashboard query, not an
+alert (Layer 2 metrics already alert on the consequence).
+
+### Dashboards
+
+A "Site Services" row on the Network Overview dashboard (file-managed JSON,
+as ever): per-instance health + announced state timeline, origin-by-vantage
+table, unbound query/SERVFAIL rates, chrony offsets per host, and the
+route-presence-per-site panel. The withdraw/announce timeline doubles as the
+incident-review artifact for flaps.
+
+### The blind spot, stated plainly
+
+The monitoring stack lives on rpi.sco, which is now also a service host: a
+total SCO/rpi.sco failure takes out the DNS/NTP instance *and* the thing
+that would have alerted about it (including Discord egress). M3's reciprocal
+probes mean the HIL Pi at least *measures* such an outage, but nothing off-
+network receives it. The always-firing Watchdog alert remains the designed
+hook for a dead-man's switch; the decision on an off-network receiver was
+deliberately deferred (2026-08-29) and this design doesn't reopen it — it
+just notes that each service anycast to rpi.sco raises the cost of that
+silent-failure mode.
+
+### Milestone mapping
+
+- **M1:** Layer 1 complete (unicast probes, chrony/unbound textfile metrics,
+  ZoneDataSkew, ChronyUnsynced, DnsRecursionFailing). Gate to M2: all green
+  for a week.
+- **M2:** Layer 2 + anycast probes from SCO (AnycastServiceDown,
+  RouteMissing, UnexpectedOrigin, Flapping, StateMismatch). The
+  UnexpectedOrigin detector **must** be live before LEB returns.
+- **M3:** Layer 3 reciprocal probes, cross-host NTP offset comparison,
+  AnycastInstanceDown becomes meaningful.
+- **M4:** revisit the blind spot alongside the other hardening items.
 
 ## Rollout milestones (each gated on Ryan's PR review)
 
