@@ -26,8 +26,7 @@ expected_users:
   - mktxp
 # current netops humans — accounts outside expected_users + this list are
 # flagged by the audit. Public keys live in files/operators/ (seichold's from
-# their GitHub profile; ae5au's pending — no keys published on GitHub, needs
-# out-of-band collection).
+# their GitHub profile; ae5au's provided directly by them).
 operators:
   - turnrye
   - seichold
