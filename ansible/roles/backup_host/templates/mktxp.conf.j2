@@ -17,5 +17,7 @@
 {% for h in groups['routeros'] | sort %}
 
 [{{ h | replace('.memhamwan.net', '') }}]
-    hostname = {{ h }}
+{# inventory IP when recorded, like the ICMP targets — fleet metrics must
+   not depend on DNS #}
+    hostname = {{ hostvars[h].ip | default(h) }}
 {% endfor %}

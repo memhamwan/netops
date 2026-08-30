@@ -10,10 +10,19 @@
     mode: "0644"
   notify: restart sshd
 
-- name: Host packages (rsync for synchronize, jq for backup metrics)
+# docker and sops are deliberately NOT installed here (install method is a
+# host-bootstrap decision — see README); everything apt-safe is
+- name: Host packages (rsync/jq/git/curl for sync + backup/metrics scripts, iptables for the firewall unit)
   ansible.builtin.apt:
-    name: [rsync, jq]
+    name: [rsync, jq, git, curl, iptables]
     state: present
+
+- name: Preflight — docker compose and sops present (README bootstrap installs them)
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - docker compose version
+    - sops --version
+  changed_when: false
 
 # synchronize + delete so renamed/removed files don't linger on the host
 # (plain copy never prunes — stale rule files kept loading via rules/*.yml)

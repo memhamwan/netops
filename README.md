@@ -144,6 +144,8 @@ secrets/             sops/age-encrypted runtime secrets
 Done 2026-08-28 on rpi.sco; recorded here to rebuild from scratch:
 
 ```sh
+# docker (with compose plugin) — the deploy play checks for it but does not
+# install it; pick your method, e.g.: curl -fsSL https://get.docker.com | sh
 sudo install -d /opt/netops /var/lib/netops/ssh /var/lib/netops/oxidized
 sudo git clone https://github.com/memhamwan/netops /opt/netops
 

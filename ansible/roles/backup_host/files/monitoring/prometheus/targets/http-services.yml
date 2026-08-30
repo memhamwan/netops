@@ -7,3 +7,7 @@
   targets: ["http://loki:3100/ready"]
 - labels: {site: sco, service: alloy}
   targets: ["http://alloy:12345/-/ready"]
+# can't deliver while alertmanager is down, but stays firing and delivers on
+# recovery — and the outage is visible on the dashboards meanwhile
+- labels: {site: sco, service: alertmanager}
+  targets: ["http://alertmanager:9093/-/ready"]
