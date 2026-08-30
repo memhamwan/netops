@@ -220,18 +220,13 @@ history shows real drift/churn patterns. Related planned work: restrict router
 SSH (port 222) reachability now that polling originates on-network, and rotate
 the legacy shared credentials.
 
-**Distributed network services (future design, undecided):** grow the on-network
-hosts (rpi.sco at SCO, meshtastic.hil — another Pi at HIL) into anycast
-providers of basic network services: recursive + authoritative DNS and NTP,
-announced via OSPF (FRR/bird) on the *existing* well-known service addresses
-(e.g. 44.34.132.1 recursive DNS, 44.34.128.181 NTP) so clients never change and
-the nearest healthy instance wins — directly fixing the single-site fragility
-exposed when LEB went dark (fleet-wide NTP drift, dead internal DNS).
-Considerations recorded now: health-coupled route withdrawal (don't announce a
-dead resolver); routing trust — Pis as OSPF speakers should sit behind
-per-neighbor route filters (or a stub area) so a compromised host can't inject
-arbitrary prefixes; and this pattern may reshape the management-access design —
-a set of trusted, OSPF-attached infra hosts acting as bastions/automation
-runners may serve better than a hub-and-spoke WireGuard overlay for operators
-(the wg-mgmt idea), or complement a much smaller one. Decide after the current
-Ansible baseline work lands.
+**Distributed network services (design under review):** grow the on-network
+hosts (rpi.sco at SCO, a Pi at HIL) into anycast providers of recursive +
+authoritative DNS and NTP on the *existing* well-known service addresses, so
+clients never change and the nearest healthy instance wins — fixing the
+single-site fragility exposed when LEB went dark. Full design, research
+findings, and rollout plan: [docs/site-services-design.md](docs/site-services-design.md).
+Related open thread kept from the original sketch: this pattern may reshape
+the management-access design — trusted OSPF-attached infra hosts as
+bastions/automation runners may serve better than (or shrink) the
+hub-and-spoke WireGuard overlay idea (wg-mgmt) for operators.
