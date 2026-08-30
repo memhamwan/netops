@@ -6,7 +6,31 @@
       {{ baseline_users.msg | map(attribute='name') | list
          | difference(expected_users) | difference(operators) }}
 
-- name: Report unexpected users
+# changed_when true: findings render CHANGED/yellow and bump the recap, so an
+# audit hit can't hide in a wall of green ok. Nothing is modified. To clear a
+# finding: add legitimate humans to `operators` (PR), or remove the account
+# from the device — until then the run intentionally stays yellow.
+- name: Report unexpected users (yellow = attention needed, nothing modified)
   ansible.builtin.debug:
-    msg: "AUDIT: unexpected user accounts on {{ inventory_hostname }}: {{ unexpected_users }}"
+    msg: "AUDIT: unexpected user accounts on {{ inventory_hostname }}: {{ unexpected_users | join(', ') }}"
+  changed_when: true
   when: unexpected_users | length > 0
+
+# one fleet-wide rollup so findings survive 40 hosts of scrollback
+- name: Audit summary (unexpected accounts across this run)
+  ansible.builtin.debug:
+    msg: >-
+      {{ ('AUDIT SUMMARY: unexpected accounts on '
+          ~ (audit_flagged | length | string) ~ ' host(s): '
+          ~ (audit_flagged | join(', ')))
+         if audit_flagged | length > 0
+         else 'AUDIT SUMMARY: no unexpected accounts on any host in this run' }}
+  vars:
+    audit_flagged: >-
+      {{ ansible_play_hosts
+         | map('extract', hostvars)
+         | selectattr('unexpected_users', 'defined')
+         | rejectattr('unexpected_users', 'equalto', [])
+         | map(attribute='inventory_hostname') | list }}
+  run_once: true
+  changed_when: audit_flagged | length > 0

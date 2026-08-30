@@ -41,7 +41,8 @@ runs over the RouterOS API (`api_modify`) and only corrects what exists:
    `ssl_certificate_verify = False`) — encryption defeats passive capture but
    not an active MITM; an internal CA is the follow-up.
 3. RouterOS `/user ssh-keys` cannot be managed via API — key imports stay in
-   the SSH-based bootstrap play.
+   the SSH-based bootstrap/onboarding plays (service accounts *and* operator
+   keys from `files/operators/`).
 4. romon and OSPF auth intentionally not touched yet (`ospf_auth` will be a
    separate audit-first role; romon secret not yet in sops).
 5. Old role disabled neighbor discovery fleet-wide; kept out of this draft —
