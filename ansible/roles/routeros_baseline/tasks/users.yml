@@ -3,10 +3,25 @@
 # creation (with random throwaway passwords + ssh-key upload) stays in the
 # bootstrap/onboarding plays, so this role can never produce a passwordless
 # account. It corrects group/policy drift on accounts that already exist.
+# expand each short policy list to RouterOS's canonical stored form (granted
+# then negated, universe order) so the string comparison is idempotent —
+# see routeros_policy_universe in defaults
+- name: Expand group policies to canonical form
+  ansible.builtin.set_fact:
+    service_groups_expanded: >-
+      {{ (service_groups_expanded | default([])) + [{'name': item.name, 'policy': (
+           (routeros_policy_universe | select('in', item.policy.split(',')) | list)
+           + (routeros_policy_universe | reject('in', item.policy.split(','))
+              | map('regex_replace', '^', '!') | list)
+         ) | join(',')}] }}
+  loop: "{{ service_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Ensure service groups exist with expected policies
   community.routeros.api_modify:
     path: user group
-    data: "{{ service_groups }}"
+    data: "{{ service_groups_expanded }}"
 
 # read-only query; check_mode false so --check runs still get real data
 # (community.routeros.api would otherwise be skipped, and the membership

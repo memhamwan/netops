@@ -32,3 +32,28 @@ service_groups:
   - {name: netops-backup-full, policy: "ssh,read,sensitive"}
   - {name: mktxp_group, policy: "api,read"}
   - {name: netops-ansible, policy: "api,ssh,ftp,read,write,policy,test"}
+
+# RouterOS stores group policies in canonical form: granted policies in this
+# fixed order, then the rest negated (!) in the same order. api_modify
+# compares strings, so the role expands service_groups to that exact form —
+# otherwise every run re-reports the same "change" forever (verified live on
+# sec3.sco). ROS 7.12 universe; if a future ROS adds a policy, runs go
+# perpetually-changed again until it's appended here.
+routeros_policy_universe:
+  - local
+  - telnet
+  - ssh
+  - ftp
+  - reboot
+  - read
+  - write
+  - policy
+  - test
+  - winbox
+  - password
+  - web
+  - sniff
+  - sensitive
+  - api
+  - romon
+  - rest-api
