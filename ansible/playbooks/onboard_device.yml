@@ -7,8 +7,13 @@
 #   oxidized       group netops-backup-ro   (ssh,read)            key-only
 #   oxidized-full  group netops-backup-full (ssh,read,sensitive)  key-only
 #   mktxp          group mktxp_group        (api,read)            sops password
+# and provisions the human operators (`operators` in the routeros_baseline
+# defaults): account in group full, keys from files/operators/<name>_*.pub.
+# An operator without committed key files still gets an account (scrambled
+# password, no keys — inert until their key lands and a re-run imports it).
 # Idempotent: existing groups/users/keys are left alone; the mktxp password is
-# (re)set from sops every run so device and collector can never drift.
+# (re)set from sops every run so device and collector can never drift; operator
+# key imports converge on file count (add a key file → re-run picks it up).
 # Key custody: the committed *.pub files mirror the keypairs living on
 # rpi.sco (README bootstrap). If those keypairs are ever regenerated (host
 # rebuild without restoring them), update the .pub files here and run with
@@ -16,7 +21,8 @@
 # import skips users that already have one.
 # Usage (after PR review):
 #   ansible-playbook playbooks/onboard_device.yml -e confirm_execution=true \
-#     -l r1.sco.memhamwan.net [-e ansible_user=turnrye] [-e rotate_backup_keys=true]
+#     -l r1.sco.memhamwan.net [-e ansible_user=turnrye] \
+#     [-e rotate_backup_keys=true] [-e rotate_operator_keys=true]
 - name: Onboard backup/metrics service accounts on RouterOS
   hosts: routeros
   gather_facts: false
@@ -52,6 +58,17 @@
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
+
+    # `operators` is defined once, in the baseline role's defaults —
+    # namespaced so the rest of that file can't shadow this play's vars
+    - name: Load operator list from routeros_baseline defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/routeros_baseline/defaults/main.yml"
+        name: baseline_defaults
+
+    - name: Extract operator list
+      ansible.builtin.set_fact:
+        operators: "{{ baseline_defaults.operators }}"
 
   tasks:
     - name: Ensure service groups
@@ -171,3 +188,59 @@
           - '/user set [find name=oxidized-full] group=netops-backup-full'
           - '/user set [find name=mktxp] group=mktxp_group'
       changed_when: true
+
+    # ---- human operators ----
+    - name: Collect operator key files
+      ansible.builtin.set_fact:
+        operator_keys: >-
+          {{ (operator_keys | default([]))
+             + [{'operator': item,
+                 'files': query('fileglob', key_dir ~ '/operators/' ~ item ~ '_*.pub') | sort}] }}
+      loop: "{{ operators }}"
+
+    # group full: operators are the device admins. Group is set on creation
+    # only — an existing operator account's group is deliberately not forced
+    - name: Ensure operator accounts (random discarded passwords)
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/user find name={{ item.operator }}]] = 0) do={/user add name={{ item.operator }} group=full password="{{ lookup("community.general.random_string", length=32, special=false) }}"}'
+      loop: "{{ operator_keys }}"
+      changed_when: true
+      no_log: true
+
+    - name: Upload operator public keys
+      ansible.builtin.command: >-
+        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+        {{ item.1 }}
+        {{ ansible_user }}@{{ inventory_hostname }}:/{{ item.1 | basename }}
+      delegate_to: localhost
+      changed_when: true
+      loop: "{{ operator_keys | subelements('files') }}"
+      loop_control:
+        label: "{{ item.1 | basename }}"
+
+    # rotation: drop existing keys so the import below re-runs with new ones
+    - name: Remove existing operator ssh keys (rotate_operator_keys)
+      community.routeros.command:
+        commands:
+          - '/user ssh-keys remove [find user={{ item.operator }}]'
+      loop: "{{ operator_keys }}"
+      loop_control:
+        label: "{{ item.operator }}"
+      changed_when: true
+      when: rotate_operator_keys | default(false) | bool
+
+    # converge on count: fewer device-side keys than committed files (fresh
+    # account, or a new key file landed) → reimport the full set
+    - name: Import operator ssh keys
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/user ssh-keys find user={{ item.operator }}]] < {{ item.files | length }})
+            do={/user ssh-keys remove [find user={{ item.operator }}];
+            {% for f in item.files %}/user ssh-keys import public-key-file={{ f | basename }} user={{ item.operator }}{{ '; ' if not loop.last else '' }}{% endfor %}}
+      loop: "{{ operator_keys }}"
+      loop_control:
+        label: "{{ item.operator }} ({{ item.files | length }} key(s))"
+      changed_when: true
+      when: item.files | length > 0
