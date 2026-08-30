@@ -59,10 +59,16 @@
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
 
-    # `operators` is defined once, in the baseline role's defaults
+    # `operators` is defined once, in the baseline role's defaults —
+    # namespaced so the rest of that file can't shadow this play's vars
     - name: Load operator list from routeros_baseline defaults
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../roles/routeros_baseline/defaults/main.yml"
+        name: baseline_defaults
+
+    - name: Extract operator list
+      ansible.builtin.set_fact:
+        operators: "{{ baseline_defaults.operators }}"
 
   tasks:
     - name: Ensure service groups
