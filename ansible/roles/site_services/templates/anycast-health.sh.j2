@@ -63,9 +63,19 @@ if [ -n "$tracking" ]; then
   # "Normal" covers both a disciplined clock and orphan/local mode; only an
   # actually unsynchronised daemon is unhealthy.
   [ "$leap" = "Normal" ] && ntp_healthy=1
-  # 7F7F0101 is chrony's local reference — i.e. running on `local stratum`
-  # because every upstream is unreachable. Expected when a site is islanded.
-  case "$refid" in 7F7F0101 | 00000000 | "") ntp_local_mode=1 ;; esac
+  # 7F7F0101 is chrony's local reference — running on `local stratum` because
+  # every upstream is unreachable. Expected when a site is islanded, and it
+  # must be reported as such, not as a fault.
+  #
+  # ONLY that refid counts. 00000000 (and an empty field) means the daemon is
+  # not synchronised at all, which is the opposite condition — treating it as
+  # orphan mode would raise the informational ChronyOrphanMode alert during a
+  # real outage and paper over ChronyUnsynchronised. Requiring leap=Normal as
+  # well means "actively serving from the local reference", not merely
+  # "claiming a local refid while unsynchronised".
+  if [ "$refid" = "7F7F0101" ] && [ "$ntp_healthy" -eq 1 ]; then
+    ntp_local_mode=1
+  fi
 fi
 
 # ── announcement state ───────────────────────────────────────────────────

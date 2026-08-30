@@ -7,6 +7,12 @@
 # page, orphan-mode NTP must not raise anything, and a label-matching mistake
 # can leave an alert permanently unable to fire (which is how the `and` in
 # AnycastStateMismatch was caught).
+# NOTE: promtool resolves rule_files relative to THIS FILE, not the working
+# directory — verified by running the suite from an unrelated cwd with an
+# absolute path to this file (passes) and by pointing this entry at a
+# nonexistent file (every test then fails). Do not "correct" this to a
+# repo-root-relative path: that resolves to tests/prometheus/ansible/... and
+# loads no rules at all, which makes the whole suite pass vacuously.
 rule_files:
   - ../../ansible/roles/backup_host/files/monitoring/prometheus/rules/site-services.yml
 

@@ -16,11 +16,20 @@ dns_extra_records:
   # Service names for the anycast addresses themselves. Deliberately named
   # after the service, not the host: they resolve to the anycast IP, which is
   # whichever instance is nearest.
+  #
+  # Primary/secondary follow the 44.34.132.x / 44.34.133.x pair convention for
+  # both services — the same pairing the site DHCP scopes already hand out
+  # (dns-server=44.34.132.1,44.34.133.1 and ntp-server=44.34.132.3,44.34.133.3).
+  # The odd one out is the legacy 44.34.128.181, which is a LEB host address
+  # rather than a service-network address; it keeps its own name below.
   - {name: dns.memhamwan.net, type: A, value: 44.34.132.1}
   - {name: dns2.memhamwan.net, type: A, value: 44.34.133.1}
-  - {name: ntp.memhamwan.net, type: A, value: 44.34.128.181}
+  - {name: ntp.memhamwan.net, type: A, value: 44.34.132.3}
+  - {name: ntp2.memhamwan.net, type: A, value: 44.34.133.3}
 
-  # Legacy LEB service names, kept resolvable while those hosts are dark so
-  # existing configs referring to them by name don't NXDOMAIN. Revisit at M4
-  # when the legacy hosts are decommissioned (see the design doc).
+  # Legacy LEB service name, kept resolvable while those hosts are dark so
+  # existing configs referring to it by name don't NXDOMAIN. 44.34.128.181 is
+  # still anycast (RouterOS NTP clients fleet-wide point at it by address), it
+  # just isn't the name we hand out going forward. Revisit at M4 when the
+  # legacy hosts are decommissioned (see the design doc).
   - {name: ntp.leb.memhamwan.net, type: A, value: 44.34.128.181}

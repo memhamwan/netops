@@ -96,7 +96,13 @@
         that:
           - zone_text is search('r1.sco.memhamwan.net. 300 IN A 44.34.128.33')
           - "zone_text is search('local-data-ptr: .44.34.128.45 rpi.sco.memhamwan.net.')"
-          - zone_text is search('ntp.memhamwan.net. 300 IN A 44.34.128.181')
+          # service names follow the .132/.133 pair convention for both
+          # services; 44.34.128.181 keeps only its legacy per-host name
+          - zone_text is search('dns.memhamwan.net. 300 IN A 44.34.132.1')
+          - zone_text is search('dns2.memhamwan.net. 300 IN A 44.34.133.1')
+          - zone_text is search('ntp.memhamwan.net. 300 IN A 44.34.132.3')
+          - zone_text is search('ntp2.memhamwan.net. 300 IN A 44.34.133.3')
+          - zone_text is search('ntp.leb.memhamwan.net. 300 IN A 44.34.128.181')
         quiet: true
       vars:
         zone_text: "{{ lookup('file', render_dir ~ '/unbound-local-zone.conf') }}"
