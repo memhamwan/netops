@@ -21,6 +21,26 @@
         fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
       run_once: true
 
+    # libssh negotiates the ssh-rsa host key and cannot prompt on first
+    # contact; without a pinned rsa entry it fails with an inscrutable
+    # "Host is unknown". Fail early with instructions instead.
+    - name: Preflight — look up pinned host key
+      ansible.builtin.command: ssh-keygen -F "[{{ inventory_hostname }}]:{{ ansible_port | default(222) }}"
+      register: hostkey_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Preflight — libssh needs a pinned ssh-rsa host key
+      ansible.builtin.assert:
+        that: "'ssh-rsa' in hostkey_check.stdout"
+        fail_msg: >-
+          No ssh-rsa host key for [{{ inventory_hostname }}]:{{ ansible_port | default(222) }}
+          in ~/.ssh/known_hosts. Run `ansible-playbook playbooks/seed_known_hosts.yml`.
+          If the device is missing from ansible/known_hosts (dark when last
+          scanned), scan it from rpi.sco (`ssh-keyscan -p 222 -t rsa <host>`),
+          add the line via PR, then re-run the seed play.
+
     - name: Load secrets from sops (ansible API password)
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
@@ -56,6 +76,12 @@
         src: "{{ playbook_dir }}/../roles/routeros_baseline/files/ansible.pub"
         dest: /ansible.pub
         protocol: scp
+
+    # RouterOS wedges the CLI channel after an SCP transfer on the same
+    # persistent connection — the next task would die with "Unable to decode
+    # JSON from response to get_capabilities()". Start a fresh connection.
+    - name: Reset connection after file transfer
+      ansible.builtin.meta: reset_connection
 
     - name: Import ansible ssh key
       community.routeros.command:

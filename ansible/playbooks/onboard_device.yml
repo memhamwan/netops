@@ -30,6 +30,24 @@
         fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
       run_once: true
 
+    # same preflight as bootstrap_ansible_user.yml — see comment there
+    - name: Preflight — look up pinned host key
+      ansible.builtin.command: ssh-keygen -F "[{{ inventory_hostname }}]:{{ ansible_port | default(222) }}"
+      register: hostkey_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Preflight — libssh needs a pinned ssh-rsa host key
+      ansible.builtin.assert:
+        that: "'ssh-rsa' in hostkey_check.stdout"
+        fail_msg: >-
+          No ssh-rsa host key for [{{ inventory_hostname }}]:{{ ansible_port | default(222) }}
+          in ~/.ssh/known_hosts. Run `ansible-playbook playbooks/seed_known_hosts.yml`.
+          If the device is missing from ansible/known_hosts (dark when last
+          scanned), scan it from rpi.sco (`ssh-keyscan -p 222 -t rsa <host>`),
+          add the line via PR, then re-run the seed play.
+
     - name: Load secrets from sops (mktxp password)
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
@@ -72,6 +90,11 @@
         dest: "/{{ item }}"
         protocol: scp
       loop: [oxidized.pub, oxidized-full.pub]
+
+    # RouterOS wedges the CLI channel after an SCP transfer on the same
+    # persistent connection — see the same reset in bootstrap_ansible_user.yml
+    - name: Reset connection after file transfer
+      ansible.builtin.meta: reset_connection
 
     # rotation: drop existing keys so the import below re-runs with the new ones
     - name: Remove existing backup ssh keys (rotate_backup_keys)
