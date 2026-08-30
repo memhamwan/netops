@@ -114,9 +114,12 @@ DNS management). The Oxidized fleet list, blackbox targets, and mktxp config
 are all templated from it at deploy time.
 
 Known-dead devices go in the inventory's `down` group: they stay in their
-site groups as IPAM record but are excluded from rendered configs, the device
-plays, and future DNS publishing. Moving a host in or out of `down` takes a
-backup-host redeploy to apply.
+site groups as IPAM record but are excluded from the device-target rendered
+configs (Oxidized, ICMP probes, mktxp), the device plays, and future DNS
+publishing. The one deliberate exception is the Alloy syslog allowlist, which
+still keeps `down` hosts — logs arriving from a supposedly-dead device are
+signal worth capturing. Moving a host in or out of `down` takes a backup-host
+redeploy to apply.
 
 **Workstation setup (once per clone):** the controller toolchain (ansible-core,
 librouteros for the RouterOS API modules, lint) lives in a uv-managed project
