@@ -30,10 +30,13 @@
     - baseline_logaction is failed
     - "'remote-log-format' not in (baseline_logaction.msg | default(''))"
 
+# read-only query; check_mode false so --check runs still get real data
 - name: Fetch current logging rules
   community.routeros.api:
     path: system logging
   register: baseline_logrules
+  check_mode: false
+  changed_when: false
 
 # the API returns topics as a string or a list depending on version; normalize
 # before comparing, or every run re-adds "missing" rules
