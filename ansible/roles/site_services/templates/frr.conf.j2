@@ -15,12 +15,16 @@ interface {{ site_lan_interface }}
  ip ospf area 0.0.0.0
  ip ospf network broadcast
  ip ospf authentication message-digest
- ip ospf message-digest-key 1 md5 {{ ospf_md5_key }}
+ ip ospf message-digest-key {{ ospf_md5_key_id }} md5 {{ ospf_md5_key }}
  ! Never become DR/BDR: a Pi rebooting must not trigger a designated-router
  ! election on the site LAN. The routers are the DR candidates.
  ip ospf priority 0
- ip ospf hello-interval 10
- ip ospf dead-interval 40
+ ! Timers and cost match the site routers' interface templates (verified on
+ ! r1.sco: broadcast, hello 10, dead 40, cost 10, auth md5 id 1, area
+ ! backbone-v2 = area-id 0.0.0.0). Mismatched timers prevent adjacency.
+ ip ospf hello-interval {{ ospf_hello_interval }}
+ ip ospf dead-interval {{ ospf_dead_interval }}
+ ip ospf cost {{ ospf_interface_cost }}
 !
 ! The dummy carries the service addresses. It is NOT an OSPF interface —
 ! the /32s reach OSPF via redistribute connected, filtered below.

@@ -211,12 +211,21 @@ Inventory changes:
 - `dns_extra_records.yml` next to the inventory for non-device internal
   records (the inventory `ip` fields already cover device A/PTR records).
 
-**Secrets:** the role needs `ospf_md5_key` in sops before anycast can be
-enabled, and it is deliberately *not* committed — the fleet's key is the old
-shared one and which value is current on every device is unverified. The role
-asserts its presence rather than joining OSPF unauthenticated (which would
-reproduce the "type mismatch" adjacency flood already diagnosed at HIL). No
-new device credentials.
+**Secrets:** `ospf_md5_key` is in `secrets/secrets.sops.yaml` (confirmed by
+Ryan, and verified on 2026-08-30 against r1.sco — the router the Pi peers
+with — which has exactly one distinct auth-key, `auth=md5`, `auth-id=1`). It
+is the old shared fleet key, so it moves together with the planned credential
+rotation and the `ospf_auth` role. The role still asserts the key is present
+rather than joining OSPF unauthenticated, which would reproduce the "type
+mismatch" adjacency flood already diagnosed at HIL. No new device credentials.
+
+The same read confirmed the rest of the adjacency parameters, which are now
+pinned in the role rather than left to frr's defaults (mismatched hello/dead
+timers prevent adjacency outright): area `backbone-v2` = area-id `0.0.0.0`,
+type broadcast, hello 10s, dead 40s, cost 10. The Pi keeps `priority 0` against
+the routers' `1`, so it can never win a DR election. Worth noting: r1.sco's
+`bridge` template — the Pi's own segment — *does* carry auth, unlike the HIL
+`vrrp1` template whose missing auth caused the flood.
 
 Monitoring changes land in the existing `backup_host` role (Prometheus
 config, blackbox modules, alert rules, dashboards) plus textfile collectors

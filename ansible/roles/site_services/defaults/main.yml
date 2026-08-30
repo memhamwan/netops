@@ -19,6 +19,17 @@ anycast_enabled: false
 
 anycast_interface: anycast0
 
+# OSPF interface parameters, matched to the site routers' interface templates
+# (verified on r1.sco 2026-08-30: area backbone-v2 = area-id 0.0.0.0, type
+# broadcast, hello 10s, dead 40s, cost 10, auth md5 with auth-id 1).
+# Mismatched hello/dead timers prevent an adjacency from forming at all.
+ospf_hello_interval: 10
+ospf_dead_interval: 40
+ospf_interface_cost: 10
+# Key id must match the routers' auth-id. The key itself is `ospf_md5_key`
+# in sops.
+ospf_md5_key_id: 1
+
 # The legacy LEB service addresses, announced as /32s. Clients (router
 # `/ip dns`, DHCP scopes, RouterOS NTP clients) already point at these — that
 # is the whole point of reusing them. `service` selects which health check

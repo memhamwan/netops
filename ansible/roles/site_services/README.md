@@ -27,23 +27,43 @@ so announcements can never be a side effect of a routine redeploy.
 ansible-playbook playbooks/site_services.yml --check --diff
 ansible-playbook playbooks/site_services.yml
 
-# M2+ — announce (after review, and after the OSPF key is in sops)
+# M2+ — announce (after review; requires sops access for the OSPF key)
 ansible-playbook playbooks/site_services.yml \
   -e anycast_enabled=true -e anycast_confirm=true
 ```
 
 ## Before anycast can be enabled
 
-1. **The OSPF MD5 key must be in sops** as `ospf_md5_key`. It is deliberately
-   *not* committed: the fleet's key is the old shared one and nobody has
-   verified which value is current on every device — read it off a router,
-   then `sops secrets/secrets.sops.yaml`. The role asserts its presence
-   rather than joining OSPF unauthenticated, which would reproduce the
-   "type mismatch" adjacency flood already diagnosed at HIL.
-2. **`site_lan_interface`** must be set for the host in the inventory
+1. **`site_lan_interface`** must be set for the host in the inventory
    (`eth0` on rpi.sco).
-3. Confirm the legacy LEB service hosts are still dark, or that their
+2. Confirm the legacy LEB service hosts are still dark, or that their
    announcements are disabled — see the split-brain note in the design doc.
+
+The OSPF MD5 key ships in sops as `ospf_md5_key` (confirmed by Ryan and
+verified against r1.sco on 2026-08-30). The role still asserts it is present
+rather than joining OSPF unauthenticated, which would reproduce the "type
+mismatch" adjacency flood already diagnosed at HIL. It is the old shared
+fleet key — when the planned credential rotation happens, this value and the
+`ospf_auth` role have to move together.
+
+## OSPF parameters, verified against the fleet
+
+Read off r1.sco's interface templates on 2026-08-30 — the router the Pi
+actually peers with, on the same `bridge` segment:
+
+| | r1.sco template | this role |
+|---|---|---|
+| area | `backbone-v2` → area-id `0.0.0.0` | `ip ospf area 0.0.0.0` |
+| type | broadcast | `ip ospf network broadcast` |
+| auth | md5, `auth-id=1` | `message-digest-key 1 md5` |
+| hello / dead | 10s / 40s | 10 / 40 (`ospf_hello_interval`, `ospf_dead_interval`) |
+| cost | 10 | 10 (`ospf_interface_cost`) |
+| priority | 1 | **0** — the Pi must never win a DR election |
+
+Mismatched hello/dead timers prevent an adjacency from forming at all, which
+is why they are pinned here rather than left to frr's defaults. Note the
+r1.sco `bridge` template *does* carry auth — unlike the `vrrp1` template at
+HIL whose missing auth caused the type-mismatch flood.
 
 ## Notes for the reviewer
 
