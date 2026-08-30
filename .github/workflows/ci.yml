@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ansible tooling
-        run: pip install ansible-core ansible-lint yamllint
+        run: pip install -r ansible/requirements.txt
       - name: Install collections
         run: ansible-galaxy collection install -r ansible/requirements.yml
       - name: yamllint
@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ansible tooling
-        run: pip install ansible-core
+        run: pip install -r ansible/requirements.txt
       - name: Install collections
         run: ansible-galaxy collection install -r ansible/requirements.yml
       - name: Render templates against the real inventory

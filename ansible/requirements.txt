@@ -1,0 +1,13 @@
+# Controller python environment — one venv, managed with uv (see README):
+#   cd ansible && uv venv && uv pip install -r requirements.txt
+# The baseline play pins ansible_python_interpreter to the python running
+# ansible, so module libraries below are guaranteed importable — no
+# interpreter-discovery roulette across the several pythons on a mac.
+
+# runtime
+ansible-core~=2.21.0
+librouteros~=4.0  # RouterOS API modules run on the controller (connection: local)
+
+# lint/CI (same versions locally and in the workflow)
+ansible-lint>=25
+yamllint>=1.35

@@ -14,6 +14,9 @@
     # ansible_connection (network_cli) overrides play keywords, and the api
     # modules must run on the controller
     ansible_connection: local
+    # run modules under the python that runs ansible (the project venv) —
+    # never the interpreter discovery happens to find on the machine
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   module_defaults:
     group/community.routeros.api:
       hostname: "{{ inventory_hostname }}"
@@ -30,6 +33,30 @@
       ansible.builtin.assert:
         that: confirm_execution | default(false) | bool
         fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+      run_once: true
+
+    # the api modules run on the controller (connection: local) and need
+    # librouteros importable by the interpreter ansible discovers — which is
+    # NOT necessarily `python3` on PATH (macs routinely have apple, homebrew,
+    # and ansible-bundled pythons side by side). python_requirements_info
+    # runs under the same discovered interpreter as the api modules and
+    # reports its exact path for the error message.
+    - name: Preflight — check for librouteros
+      community.general.python_requirements_info:
+        dependencies: [librouteros]
+      delegate_to: localhost
+      run_once: true
+      register: librouteros_check
+
+    - name: Preflight — librouteros required on the controller
+      ansible.builtin.assert:
+        that: "'librouteros' not in librouteros_check.not_found"
+        fail_msg: >-
+          librouteros is not importable by {{ librouteros_check.python }} —
+          the interpreter ansible runs modules under. You're probably not in
+          the project venv: `cd ansible && uv venv && uv pip install -r
+          requirements.txt`, then rerun from a shell where direnv has put
+          ansible/.venv/bin on PATH (see README).
       run_once: true
     - name: Load secrets from sops
       community.sops.load_vars:

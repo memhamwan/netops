@@ -68,12 +68,39 @@
     # step one; an internal CA is the follow-up (routeros_baseline README).
     # 8728 stays up here — the baseline's api_lockdown disables it once
     # everything has moved (migration order in the role README).
-    - name: Ensure api-ssl certificate and service
+    #
+    # Learned live on sec3.sco: ROS 7.12 refuses to self-sign a cert without
+    # key-cert-sign usage ("failure: CA not found"), signing is asynchronous,
+    # and errors inside do={} blocks are SILENT — hence the
+    # recreate-unless-good guard (self-heals partial earlier runs), the
+    # bounded wait, and the explicit verification task below.
+    # devices without NTP sign certs with an epoch-era clock (seen live:
+    # notBefore 1971). Harmless while clients skip validation, but once the
+    # baseline lands NTP and clocks sync, rotate to get sane validity dates:
+    #   -e rotate_api_cert=true
+    - name: Remove api-ssl certificate for regeneration (rotate_api_cert)
       community.routeros.command:
         commands:
-          - ':if ([:len [/certificate find name=api-ssl]] = 0) do={/certificate add name=api-ssl common-name={{ inventory_hostname }} key-size=2048 days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server; /certificate sign api-ssl}'
+          - '/ip service set api-ssl certificate=none'
+          - '/certificate remove [find name=api-ssl]'
+      changed_when: true
+      when: rotate_api_cert | default(false) | bool
+
+    - name: Ensure api-ssl certificate (signed, full usage)
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/certificate find name=api-ssl private-key key-usage~"tls-server"]] = 0) do={/certificate remove [find name=api-ssl]; /certificate add name=api-ssl common-name={{ inventory_hostname }} key-size=2048 days-valid=3650 key-usage=key-cert-sign,digital-signature,key-encipherment,tls-server; /certificate sign api-ssl}'
+          - '{:local i 0; :while (([:len [/certificate find name=api-ssl !private-key]] > 0) && ($i < 45)) do={:delay 1; :set i ($i + 1)}}'
           - '/ip service set api-ssl certificate=api-ssl port=8729 disabled=no'
       changed_when: true
+
+    - name: Verify api-ssl is signed, bound, and enabled
+      community.routeros.command:
+        commands:
+          - ':put [:len [/ip service find name=api-ssl !disabled certificate=api-ssl port=8729]]'
+      register: apissl_check
+      changed_when: false
+      failed_when: "'1' not in (apissl_check.stdout | join(' '))"
 
     # no_log: the commands embed then-valid passwords
     - name: Ensure backup users (random discarded passwords)
@@ -84,17 +111,16 @@
       changed_when: true
       no_log: true
 
+    # plain scp from the controller, NOT net_put — see the identical comment
+    # in bootstrap_ansible_user.yml (net_put wedges the network_cli session)
     - name: Upload backup public keys
-      ansible.netcommon.net_put:
-        src: "{{ key_dir }}/{{ item }}"
-        dest: "/{{ item }}"
-        protocol: scp
+      ansible.builtin.command: >-
+        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+        {{ key_dir }}/{{ item }}
+        {{ ansible_user }}@{{ inventory_hostname }}:/{{ item }}
+      delegate_to: localhost
+      changed_when: true
       loop: [oxidized.pub, oxidized-full.pub]
-
-    # RouterOS wedges the CLI channel after an SCP transfer on the same
-    # persistent connection — see the same reset in bootstrap_ansible_user.yml
-    - name: Reset connection after file transfer
-      ansible.builtin.meta: reset_connection
 
     # rotation: drop existing keys so the import below re-runs with the new ones
     - name: Remove existing backup ssh keys (rotate_backup_keys)
