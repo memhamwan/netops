@@ -31,6 +31,26 @@
         that: confirm_execution | default(false) | bool
         fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
       run_once: true
+
+    # the api modules run on the controller (connection: local) and need
+    # librouteros importable by the local python
+    - name: Preflight — check for librouteros
+      ansible.builtin.command: python3 -c "import librouteros"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      failed_when: false
+      register: librouteros_check
+
+    - name: Preflight — librouteros required on the controller
+      ansible.builtin.assert:
+        that: librouteros_check.rc == 0
+        fail_msg: >-
+          librouteros is not importable by the controller's python. Install it
+          for the interpreter ansible discovers locally, e.g.
+          `python3 -m pip install --user --break-system-packages librouteros`
+          (homebrew pythons are PEP 668 externally-managed).
+      run_once: true
     - name: Load secrets from sops
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
