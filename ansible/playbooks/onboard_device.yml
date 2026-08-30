@@ -44,6 +44,19 @@
           - ':if ([:len [/user group find name=mktxp_group]] = 0) do={/user group add name=mktxp_group policy=api,read}'
       changed_when: true
 
+    # per-device self-signed TLS cert so api-ssl (8729) can carry mktxp and
+    # the baseline role: encrypted transport defeats passive capture on radio
+    # links (a source ACL does not). Self-signed + no client validation is
+    # step one; an internal CA is the follow-up (routeros_baseline README).
+    # 8728 stays up here — the baseline's api_lockdown disables it once
+    # everything has moved (migration order in the role README).
+    - name: Ensure api-ssl certificate and service
+      community.routeros.command:
+        commands:
+          - ':if ([:len [/certificate find name=api-ssl]] = 0) do={/certificate add name=api-ssl common-name={{ inventory_hostname }} key-size=2048 days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server; /certificate sign api-ssl}'
+          - '/ip service set api-ssl certificate=api-ssl disabled=no'
+      changed_when: true
+
     # no_log: the commands embed then-valid passwords
     - name: Ensure backup users (random discarded passwords)
       community.routeros.command:

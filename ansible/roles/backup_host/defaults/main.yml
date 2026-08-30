@@ -17,6 +17,13 @@ data_dirs:
 # oxidized container uid
 oxidized_uid: "30000"
 
+# Flip to true as step 2 of the api-ssl migration (routeros_baseline README):
+# after onboard_device.yml has put certs + api-ssl (8729) on the fleet, and
+# BEFORE the baseline's api_lockdown disables plaintext 8728. Defaults to the
+# currently-deployed plaintext state so a redeploy before the device-side
+# migration doesn't break fleet metrics.
+mktxp_use_ssl: false
+
 # Sources allowed to reach the public syslog listener (514) — docker-published
 # ports bypass INPUT, so this is enforced in the DOCKER-USER chain. AMPRNet-wide
 # by default; tighten to the MemHamWAN allocation once confirmed. Spoofed UDP

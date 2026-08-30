@@ -2,8 +2,17 @@
     enabled = True
     username = mktxp
     password = {{ mktxp_password }}
+{% if mktxp_use_ssl | bool %}
+    port = 8729
+    use_ssl = True
+    # devices carry per-device self-signed certs (onboard_device.yml);
+    # verification waits on the internal-CA step in the baseline README
+    no_ssl_certificate = False
+    ssl_certificate_verify = False
+{% else %}
     port = 8728
     use_ssl = False
+{% endif %}
     routerboard = True
 {% for h in groups['routeros'] | sort %}
 

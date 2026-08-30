@@ -1,10 +1,10 @@
 ---
 # Service lockdown, ported from ioc-terraform's routeros role with one
-# deliberate change: the API stays ENABLED, restricted to the collector
-# (mktxp + this role's own transport), instead of disabled.
-# The api source restriction itself lives in api_lockdown.yml, imported LAST —
-# it can sever this very session, so everything else must already be applied.
-# TODO(review): plaintext API on 8728 — evaluate api-ssl + certs later.
+# deliberate change: the API stays reachable — as api-ssl (8729, per-device
+# cert from the onboarding play) restricted to the collector (mktxp + this
+# role's own transport) — instead of disabled outright.
+# api and api-ssl are managed in api_lockdown.yml, imported LAST — changing
+# them can sever this very session, so everything else must already be applied.
 - name: Configure IP services
   community.routeros.api_modify:
     path: ip service
@@ -13,7 +13,6 @@
       - {name: ftp, disabled: true}
       - {name: www, disabled: true}
       - {name: www-ssl, disabled: true}
-      - {name: api-ssl, disabled: true}
       - {name: winbox, disabled: true}
       - {name: ssh, port: 222}
 

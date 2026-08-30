@@ -19,6 +19,12 @@
       hostname: "{{ inventory_hostname }}"
       username: ansible
       password: "{{ routeros_svc_api_password }}"
+      # api-ssl (per-device self-signed cert from onboard_device.yml):
+      # encryption defeats passive capture; certificate validation waits on
+      # the internal-CA step (role README) — hence validate_certs false
+      tls: true
+      port: 8729
+      validate_certs: false
   pre_tasks:
     - name: Execution gate — this play is a draft pending review
       ansible.builtin.assert:
