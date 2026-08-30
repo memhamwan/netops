@@ -147,7 +147,11 @@ Done 2026-08-28 on rpi.sco; recorded here to rebuild from scratch:
 sudo install -d /opt/netops /var/lib/netops/ssh /var/lib/netops/oxidized
 sudo git clone https://github.com/memhamwan/netops /opt/netops
 
-# keys (private halves never leave the host)
+# keys (private halves never leave the host). NOTE for a REBUILD (not first
+# install): regenerating means the fleet's device-side public keys no longer
+# match — either restore the original keypairs from wherever they're escrowed,
+# or update ansible/roles/routeros_baseline/files/*.pub and run
+# onboard_device.yml with -e rotate_backup_keys=true across the fleet.
 sudo ssh-keygen -t ed25519 -N '' -C oxidized@rpi-sco       -f /var/lib/netops/ssh/id_ed25519
 sudo ssh-keygen -t ed25519 -N '' -C oxidized-full@rpi-sco  -f /var/lib/netops/ssh/oxidized_full_ed25519
 sudo ssh-keygen -t ed25519 -N '' -C netops-backup@rpi-sco  -f /var/lib/netops/ssh/gh_deploy_ed25519

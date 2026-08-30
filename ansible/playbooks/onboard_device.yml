@@ -9,9 +9,14 @@
 #   mktxp          group mktxp_group        (api,read)            sops password
 # Idempotent: existing groups/users/keys are left alone; the mktxp password is
 # (re)set from sops every run so device and collector can never drift.
+# Key custody: the committed *.pub files mirror the keypairs living on
+# rpi.sco (README bootstrap). If those keypairs are ever regenerated (host
+# rebuild without restoring them), update the .pub files here and run with
+# -e rotate_backup_keys=true to replace the device-side keys — the default
+# import skips users that already have one.
 # Usage (after PR review):
 #   ansible-playbook playbooks/onboard_device.yml -e confirm_execution=true \
-#     -l r1.sco.memhamwan.net [-e ansible_user=turnrye]
+#     -l r1.sco.memhamwan.net [-e ansible_user=turnrye] [-e rotate_backup_keys=true]
 - name: Onboard backup/metrics service accounts on RouterOS
   hosts: routeros
   gather_facts: false
@@ -54,6 +59,15 @@
         dest: "/{{ item }}"
         protocol: scp
       loop: [oxidized.pub, oxidized-full.pub]
+
+    # rotation: drop existing keys so the import below re-runs with the new ones
+    - name: Remove existing backup ssh keys (rotate_backup_keys)
+      community.routeros.command:
+        commands:
+          - '/user ssh-keys remove [find user=oxidized]'
+          - '/user ssh-keys remove [find user=oxidized-full]'
+      changed_when: true
+      when: rotate_backup_keys | default(false) | bool
 
     - name: Import backup ssh keys
       community.routeros.command:
