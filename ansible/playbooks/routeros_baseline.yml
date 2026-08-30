@@ -7,7 +7,7 @@
 # ACL'd to the collector, so run from rpi.sco or pass api_extra_sources.
 # First real run should be: --check --diff -e confirm_execution=true
 - name: RouterOS fleet baseline
-  hosts: routeros
+  hosts: 'routeros:!down'  # down group = known-dead devices, see inventory
   gather_facts: false
   vars:
     # play var, not the `connection:` keyword: the inventory's group-level

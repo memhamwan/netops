@@ -10,7 +10,7 @@
 #   ansible-playbook playbooks/bootstrap_ansible_user.yml -e confirm_execution=true \
 #     [-l r1.sco.memhamwan.net] [-e ansible_user=turnrye]
 - name: Bootstrap ansible service user on RouterOS
-  hosts: routeros
+  hosts: 'routeros:!down'  # down group = known-dead devices, see inventory
   gather_facts: false
   vars:
     ansible_user: "{{ lookup('env', 'USER') }}"

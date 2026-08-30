@@ -1,5 +1,5 @@
 # RENDERED from ansible/inventory/hosts.yml — do not edit by hand.
-{% for h in groups['ups'] | sort %}
+{% for h in groups['ups'] | difference(groups['down'] | default([])) | sort %}
 - labels: {site: {{ hostvars[h].site }}, kind: ups, device: {{ h | replace('.memhamwan.net', '') }}}
   targets: [{{ hostvars[h].ip | default(h) }}]
 {% endfor %}
