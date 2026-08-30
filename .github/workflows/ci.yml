@@ -17,7 +17,7 @@ jobs:
       - name: Install ansible tooling
         run: pip install -r ansible/requirements.txt
       - name: Install collections
-        run: ansible-galaxy collection install -r ansible/requirements.yml
+        run: ansible-galaxy collection install --no-cache -r ansible/requirements.yml
       - name: yamllint
         run: yamllint .
       - name: ansible-lint
@@ -42,7 +42,7 @@ jobs:
       - name: Install ansible tooling
         run: pip install -r ansible/requirements.txt
       - name: Install collections
-        run: ansible-galaxy collection install -r ansible/requirements.yml
+        run: ansible-galaxy collection install --no-cache -r ansible/requirements.yml
       - name: Render templates against the real inventory
         working-directory: ansible
         run: ansible-playbook playbooks/ci_render.yml
