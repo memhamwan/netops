@@ -1,0 +1,40 @@
+# RENDERED by the netops site_services role — do not edit on the host.
+
+# Numeric upstreams on purpose: the outage that takes internal DNS down is
+# the same one that leaves the fleet without time, so a hostname-only
+# upstream list would be unresolvable exactly when it is needed.
+{% for server in ntp_upstream_servers %}
+server {{ server }} iburst
+{% endfor %}
+{% for pool in ntp_upstream_pools %}
+pool {{ pool }} iburst maxsources 3
+{% endfor %}
+
+{% set peers = groups['service_hosts'] | default([]) | reject('eq', inventory_hostname) | list %}
+{% if peers %}
+# Other service hosts, by their own addresses (not the anycast IPs — peering
+# with an anycast address would mean peering with yourself).
+{% for peer in peers | sort %}
+peer {{ hostvars[peer].ip | default(peer) }}
+{% endfor %}
+{% else %}
+# No peers yet — this is the only service host (see M3 in the design doc).
+{% endif %}
+
+# Serve the fleet.
+{% for cidr in ntp_allowed_cidrs %}
+allow {{ cidr }}
+{% endfor %}
+
+# Islanded-site behaviour: when every upstream is unreachable, keep serving
+# at a high stratum instead of going unsynchronised, so all clocks on the
+# island stay comparable for log correlation. `orphan` makes the service
+# hosts agree on a single source among themselves rather than each free-
+# running. This is a normal operating mode, NOT a withdrawal condition.
+local stratum {{ ntp_orphan_stratum }} orphan
+
+driftfile /var/lib/chrony/chrony.drift
+# The Pi has no RTC — allow a large correction at boot, then discipline.
+makestep 1.0 3
+logdir /var/log/chrony
+leapsectz right/UTC

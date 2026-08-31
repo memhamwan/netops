@@ -51,6 +51,39 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox:9115
 
+  # DNS checks of the site service hosts. Targets are rendered from the
+  # inventory (targets/dns-services.yml) and carry kind="unicast" for each
+  # host's own address and kind="anycast" for the shared service addresses:
+  # an anycast probe only ever tells you about the *nearest* instance, so the
+  # per-instance truth has to be collected separately.
+  - job_name: blackbox-dns-internal
+    metrics_path: /probe
+    params:
+      module: [dns_internal]
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/dns-*.yml]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: blackbox-dns-recursion
+    metrics_path: /probe
+    params:
+      module: [dns_recursion]
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/dns-*.yml]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
   # HTTP checks of our own services
   - job_name: blackbox-http
     metrics_path: /probe

@@ -22,6 +22,13 @@ oxidized_uid: "30000"
 # inherit this and join over 8729 when they recover — no plaintext fallback.
 mktxp_use_ssl: true
 
+# Anycast DNS addresses to probe as a client would (in addition to each
+# service host's own address). Mirrors the `dns` entries of anycast_services
+# in roles/site_services/defaults/main.yml — keep the two in sync.
+site_services_anycast_dns_ips:
+  - 44.34.132.1
+  - 44.34.133.1
+
 # Sources allowed to reach the public syslog listener (514) — docker-published
 # ports bypass INPUT, so this is enforced in the DOCKER-USER chain. AMPRNet-wide
 # by default; tighten to the MemHamWAN allocation once confirmed. Spoofed UDP

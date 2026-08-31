@@ -1,0 +1,91 @@
+# RENDERED by the netops site_services role — do not edit on the host.
+server:
+    # Anycast-safe listening: bind the wildcard and let unbound reply from the
+    # address the query arrived on. Without interface-automatic, answers to a
+    # query sent to an anycast address would be sourced from the host's own
+    # address and dropped by the client as off-path.
+    interface: 0.0.0.0
+    interface-automatic: yes
+    port: 53
+    do-ip4: yes
+    do-ip6: no
+    do-udp: yes
+    do-tcp: yes
+
+    # Answers CH TXT hostname.bind with the short hostname — this is what the
+    # monitoring layer uses to tell which anycast instance answered, and what
+    # the split-brain detector compares against the enrolled host list.
+    # hide-identity: no is load-bearing, not cosmetic: setting `identity` alone
+    # does not guarantee id.server/hostname.bind is answered (some builds/
+    # distro defaults refuse it), and the health script now pages split-brain
+    # on a reachable resolver that returns NO identity — a hidden identity would
+    # make this host flag *itself* the moment anycast is active. Version stays
+    # hidden; only the deliberately-published identity is exposed.
+    identity: "{{ inventory_hostname | replace('.' ~ dns_zone, '') }}"
+    hide-identity: no
+    hide-version: yes
+
+    # Two client classes (see defaults/main.yml). Most-specific netblock wins,
+    # so the fleet `allow`s override the 0.0.0.0/0 entry:
+    #  • fleet ranges + localhost → allow: full recursion + local-data.
+    #  • everyone else → refuse_non_local when we serve the internal zone
+    #    publicly (authoritative local-data only, recursion REFUSED — so this
+    #    can never be an open resolver), else plain refuse.
+    access-control: 0.0.0.0/0 {{ 'refuse_non_local' if dns_authoritative_public | bool else 'refuse' }}
+    access-control: 127.0.0.0/8 allow
+{% for cidr in dns_recursion_cidrs %}
+    access-control: {{ cidr }} allow
+{% endfor %}
+{% if dns_authoritative_public | bool and dns_ip_ratelimit | int > 0 %}
+
+    # Per-IP qps cap on the public authoritative face, applied before the
+    # cache lookup; excess is dropped. Blunts reflection/amplification.
+    # (unbound marks this experimental, but it is the right knob here.)
+    ip-ratelimit: {{ dns_ip_ratelimit | int }}
+{% endif %}
+
+    # DNSSEC validation stays on for the public tree (the root anchor comes
+    # from the packaged root-auto-trust-anchor-file config). Internal names are
+    # served from local-data, which short-circuits before validation, so no
+    # domain-insecure is needed — and public memhamwan.net names that fall
+    # through are still validated.
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    harden-below-nxdomain: yes
+    qname-minimisation: yes
+    aggressive-nsec: yes
+    val-clean-additional: yes
+
+    # Modest for a Pi that also runs the monitoring stack.
+    num-threads: 2
+    so-reuseport: yes
+    msg-cache-size: 32m
+    rrset-cache-size: 64m
+    # Keep answers warm through upstream outages: serve-expired means a
+    # stale answer beats SERVFAIL when the internet path is down.
+    prefetch: yes
+    prefetch-key: yes
+    serve-expired: yes
+    serve-expired-ttl: 86400
+    cache-min-ttl: 60
+    cache-max-ttl: 86400
+
+    # RFC1918 reverse lookups from NAT'd site clients must not leak upstream
+    # (and would only ever NXDOMAIN there).
+    private-address: 10.0.0.0/8
+    private-address: 172.16.0.0/12
+    private-address: 192.168.0.0/16
+    # ...but 44/8 is public space we serve locally, so it is NOT listed here.
+
+    do-not-query-localhost: yes
+    logfile: ""
+    use-syslog: yes
+    log-servfail: yes
+    verbosity: 1
+
+remote-control:
+    # Unix socket, no certificates to provision — used by the health script
+    # for query/cache/SERVFAIL counters.
+    control-enable: yes
+    control-interface: /run/unbound.ctl
+    control-use-cert: no

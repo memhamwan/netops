@@ -1,0 +1,29 @@
+---
+# The health/metrics timer. Runs whether or not anycast is enabled: with
+# anycast off it only writes metrics (so M1 has monitoring before M2 has
+# routing); with anycast on it is also the authority on which service
+# addresses exist on the dummy interface — frr withdraws the connected route
+# by itself when an address disappears, so nothing here reconfigures frr.
+- name: Install anycast health script
+  ansible.builtin.template:
+    src: anycast-health.sh.j2
+    dest: /opt/netops/site-services/anycast-health.sh
+    mode: "0755"
+  notify: run health check
+
+- name: Install health check units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - netops-anycast-health.service
+    - netops-anycast-health.timer
+  notify: systemd reload
+
+- name: Enable health check timer
+  ansible.builtin.systemd:
+    name: netops-anycast-health.timer
+    enabled: true
+    state: started
+    daemon_reload: true

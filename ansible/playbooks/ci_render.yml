@@ -32,6 +32,7 @@
         - router.db
         - icmp-routeros.yml
         - icmp-infra.yml
+        - dns-services.yml
         - mktxp.conf
         - caddy-auth.snippet
         - config.alloy
@@ -44,3 +45,143 @@
       loop:
         - icmp-routeros.yml
         - icmp-infra.yml
+        - dns-services.yml
+
+# Same idea for site_services: render against the real service host's vars so
+# the zone data, frr config, and health script are proven to template. Runs
+# with connection: local — nothing is sent to the host.
+- name: Render site_services templates for validation
+  hosts: service_hosts
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build/rendered/site-services"
+    ospf_md5_key: dummy-key-for-render
+  tasks:
+    - name: Load site_services defaults + extra DNS records
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../roles/site_services/defaults/main.yml"
+        - "{{ playbook_dir }}/../inventory/dns_extra_records.yml"
+
+    # After include_vars, which outranks play vars: render the anycast-enabled
+    # variant, since it is the superset (frr config exists only in that state).
+    - name: Render the anycast-enabled variant
+      ansible.builtin.set_fact:
+        anycast_enabled: true
+
+    - name: Render directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render templates
+      ansible.builtin.template:
+        src: "../roles/site_services/templates/{{ item.src }}.j2"
+        dest: "{{ render_dir }}/{{ item.dest | default(item.src) }}"
+        mode: "0644"
+      loop:
+        - {src: unbound-netops.conf}
+        - {src: unbound-local-zone.conf}
+        - {src: chrony.conf}
+        - {src: frr.conf}
+        - {src: netops-anycast-link.service}
+        - {src: anycast-health.sh}
+
+    - name: The rendered zone data covers the fleet and the extra records
+      ansible.builtin.assert:
+        # Literal substring checks (`in`), not `is search` — `search` is a
+        # regex, where every unescaped `.` is a wildcard, so a pattern like
+        # 'ntp.memhamwan.net. 300 IN A ...' also matches 'ntpXmemhamwanYnetZ
+        # 300 IN A ...'. These assertions exist to catch exactly that kind of
+        # corruption, so they have to match exactly.
+        that:
+          - "'local-data: \"r1.sco.memhamwan.net. 300 IN A 44.34.128.33\"' in zone_text"
+          - "'local-data-ptr: \"44.34.128.45 rpi.sco.memhamwan.net\"' in zone_text"
+          # service names follow the .132/.133 pair convention for both
+          # services; 44.34.128.181 keeps only its legacy per-host name
+          - "'local-data: \"dns.memhamwan.net. 300 IN A 44.34.132.1\"' in zone_text"
+          - "'local-data: \"dns2.memhamwan.net. 300 IN A 44.34.133.1\"' in zone_text"
+          - "'local-data: \"ntp.memhamwan.net. 300 IN A 44.34.132.3\"' in zone_text"
+          - "'local-data: \"ntp2.memhamwan.net. 300 IN A 44.34.133.3\"' in zone_text"
+          - "'local-data: \"ntp.leb.memhamwan.net. 300 IN A 44.34.128.181\"' in zone_text"
+          # the health-probe sentinel must be present with the value the probe
+          # expects, or the DNS liveness check withdraws on a name it can't resolve
+          - "'local-data: \"dns-probe.memhamwan.net. 300 IN A 192.0.2.53\"' in zone_text"
+        quiet: true
+      vars:
+        zone_text: "{{ lookup('file', render_dir ~ '/unbound-local-zone.conf') }}"
+
+    # The M1 guarantee, asserted rather than assumed: with anycast off the
+    # script cannot touch an address, and with it on it can.
+    - name: The health script honours the anycast switch in both directions
+      ansible.builtin.assert:
+        that:
+          - "'ANYCAST_ENABLED=0' in disabled_script"
+          - "'ANYCAST_ENABLED=1' in enabled_script"
+          - "'44.34.132.1 44.34.133.1' in enabled_script"
+        quiet: true
+      vars:
+        script: ../roles/site_services/templates/anycast-health.sh.j2
+        disabled_script: "{{ lookup('template', script, template_vars={'anycast_enabled': false}) }}"
+        enabled_script: "{{ lookup('template', script, template_vars={'anycast_enabled': true}) }}"
+
+    # frr must never redistribute anything beyond the service /32s, and must
+    # never win a DR election on the site LAN.
+    - name: The frr config keeps its guardrails
+      ansible.builtin.assert:
+        # literal, for the same reason as the zone assertions above
+        that:
+          - "'ip ospf priority 0' in frr_text"
+          - "'redistribute connected metric-type 1 route-map ANYCAST-ONLY' in frr_text"
+          - "'no default-information originate' in frr_text"
+          - "'route-map ANYCAST-ONLY deny 20' in frr_text"
+          - "'ip prefix-list ANYCAST-SERVICES seq 30 deny any' in frr_text"
+        quiet: true
+      vars:
+        frr_text: "{{ lookup('file', render_dir ~ '/frr.conf') }}"
+
+    # The open-resolver guard, asserted rather than assumed. With public auth
+    # on (the default, rendered above) the 0.0.0.0/0 face must be
+    # refuse_non_local — serve authoritative local-data, never recurse — and
+    # must NEVER be `allow`, which would be an open resolver. Recursion is
+    # fleet reach only, never all of 44/8.
+    - name: unbound never exposes recursion to the public (public auth on)
+      ansible.builtin.assert:
+        that:
+          - "'access-control: 0.0.0.0/0 refuse_non_local' in acl"
+          - "'access-control: 0.0.0.0/0 allow' not in acl"
+          - "'ip-ratelimit:' in acl"
+          - "'access-control: 44.34.128.0/21 allow' in acl"
+          - "'access-control: 44.0.0.0/8 allow' not in acl"
+        quiet: true
+      vars:
+        acl: "{{ lookup('file', render_dir ~ '/unbound-netops.conf') }}"
+
+    # set_fact (not template_vars/task-vars) so it outranks the include_vars
+    # default; render the other switch position and pin it too, so a future
+    # edit that widens the public face fails CI instead of shipping.
+    - name: Flip public auth off for the second render
+      ansible.builtin.set_fact:
+        dns_authoritative_public: false
+
+    - name: Render unbound with public auth off
+      ansible.builtin.template:
+        src: ../roles/site_services/templates/unbound-netops.conf.j2
+        dest: "{{ render_dir }}/unbound-netops.conf.public-off"
+        mode: "0644"
+
+    - name: With public auth off the internal zone stays fleet-only
+      ansible.builtin.assert:
+        that:
+          # full directive, not a bare 'refuse_non_local' — that substring
+          # also appears in the explanatory comment block above the rule.
+          - "'access-control: 0.0.0.0/0 refuse' in acl_off"
+          - "'access-control: 0.0.0.0/0 refuse_non_local' not in acl_off"
+          - "'access-control: 0.0.0.0/0 allow' not in acl_off"
+        quiet: true
+      vars:
+        acl_off: "{{ lookup('file', render_dir ~ '/unbound-netops.conf.public-off') }}"

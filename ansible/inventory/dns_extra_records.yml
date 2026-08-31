@@ -1,0 +1,44 @@
+---
+# Internal DNS records that are NOT derived from the fleet inventory.
+#
+# Device A/PTR records come from `ip:` in hosts.yml — do not repeat them here.
+# This file is for service names, aliases, and anything else the internal
+# resolvers should answer authoritatively. Rendered into unbound local-data by
+# the site_services role, identically on every service host (git is the
+# cluster — there is no zone transfer).
+#
+# The zone is served `transparent`: names defined here (and device names from
+# the inventory) are answered locally; every other memhamwan.net name falls
+# through to the public Cloudflare zone. So do NOT list grafana/prometheus/
+# alertmanager here — those are public records with real TLS certs, and
+# shadowing them locally would break the Caddy vhosts.
+dns_extra_records:
+  # Service names for the anycast addresses themselves. Deliberately named
+  # after the service, not the host: they resolve to the anycast IP, which is
+  # whichever instance is nearest.
+  #
+  # Primary/secondary follow the 44.34.132.x / 44.34.133.x pair convention for
+  # both services — the same pairing the site DHCP scopes already hand out
+  # (dns-server=44.34.132.1,44.34.133.1 and ntp-server=44.34.132.3,44.34.133.3).
+  # The odd one out is the legacy 44.34.128.181, which is a LEB host address
+  # rather than a service-network address; it keeps its own name below.
+  - {name: dns.memhamwan.net, type: A, value: 44.34.132.1}
+  - {name: dns2.memhamwan.net, type: A, value: 44.34.133.1}
+  - {name: ntp.memhamwan.net, type: A, value: 44.34.132.3}
+  - {name: ntp2.memhamwan.net, type: A, value: 44.34.133.3}
+
+  # Legacy LEB service name, kept resolvable while those hosts are dark so
+  # existing configs referring to it by name don't NXDOMAIN. 44.34.128.181 is
+  # still anycast (RouterOS NTP clients fleet-wide point at it by address), it
+  # just isn't the name we hand out going forward. Revisit at M4 when the
+  # legacy hosts are decommissioned (see the design doc).
+  - {name: ntp.leb.memhamwan.net, type: A, value: 44.34.128.181}
+
+  # Health-probe sentinel: the DNS liveness check (dns_probe_name/expect in the
+  # site_services role, mirrored by the blackbox dns_internal module) resolves
+  # THIS name and expects THIS value. Deliberately a fixed RFC 5737 TEST-NET
+  # address — never a device or service IP — so the probe is decoupled from any
+  # renumbering: it proves "unbound is serving the internal zone" without going
+  # stale and withdrawing DNS when a real host changes address. Do not point it
+  # at a real host, and keep it in sync with dns_probe_expect + blackbox.yml.
+  - {name: dns-probe.memhamwan.net, type: A, value: 192.0.2.53}

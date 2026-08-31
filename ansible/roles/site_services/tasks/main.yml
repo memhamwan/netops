@@ -1,0 +1,40 @@
+---
+# Deploys DNS + NTP (and, when anycast_enabled, the OSPF announcement) to a
+# site service host. Native systemd services, not containers: everything else
+# on the network — including docker pulls and alert delivery — depends on
+# these, so they must not share fate with the container runtime.
+- name: Service packages
+  ansible.builtin.apt:
+    name: [unbound, chrony, bind9-dnsutils]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: State + textfile directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ site_services_var }}"
+    - "{{ site_services_textfile_dir }}"
+    - /opt/netops/site-services
+
+# Both the resolver and the anycast interface need to know whether NM is the
+# one managing interfaces/resolv.conf on this host.
+- name: Is NetworkManager in play?
+  ansible.builtin.stat:
+    path: /etc/NetworkManager
+  register: nm_dir
+
+- name: Configure unbound
+  ansible.builtin.import_tasks: unbound.yml
+
+- name: Configure chrony
+  ansible.builtin.import_tasks: chrony.yml
+
+- name: Configure anycast (dummy interface, frr, announcement)
+  ansible.builtin.import_tasks: anycast.yml
+
+- name: Install health check + metrics
+  ansible.builtin.import_tasks: healthcheck.yml

@@ -1,0 +1,23 @@
+---
+# NTP server for the fleet. Replaces systemd-timesyncd (a client-only SNTP
+# implementation that cannot serve).
+- name: Disable systemd-timesyncd (chrony owns the clock)
+  ansible.builtin.systemd:
+    name: systemd-timesyncd.service
+    enabled: false
+    state: stopped
+    masked: true
+  failed_when: false
+
+- name: Install chrony config
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    mode: "0644"
+  notify: restart chrony
+
+- name: Enable chrony
+  ansible.builtin.systemd:
+    name: chrony
+    enabled: true
+    state: started

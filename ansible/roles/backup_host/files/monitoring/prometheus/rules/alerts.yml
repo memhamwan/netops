@@ -51,9 +51,12 @@ groups:
   - name: pipeline
     rules:
       # if blackbox itself dies, probe_success vanishes and NodeDown/SiteDown
-      # *clear* — this is the alert that says "reachability alerting is blind"
+      # *clear* — this is the alert that says "reachability alerting is blind".
+      # Covers the DNS jobs too: the site-services DNS alerts are guarded by
+      # `count(...) > 0`, so they silently disappear if blackbox-dns-* stops
+      # scraping — this alert is the backstop those guards rely on.
       - alert: BlackboxScrapeFailed
-        expr: avg by (job) (up{job=~"blackbox-icmp|blackbox-http"}) < 1
+        expr: avg by (job) (up{job=~"blackbox-icmp|blackbox-http|blackbox-dns-internal|blackbox-dns-recursion"}) < 1
         for: 5m
         labels:
           severity: page

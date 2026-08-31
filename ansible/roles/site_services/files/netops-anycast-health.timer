@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the site-services health check every 10 seconds
+
+[Timer]
+# Fast cadence: this is the failure-detection time for anycast withdrawal.
+# OSPF's own dead-interval (40s) is the other half of the failover budget.
+OnBootSec=30s
+OnUnitActiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

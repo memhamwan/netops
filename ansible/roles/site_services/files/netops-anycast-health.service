@@ -1,0 +1,8 @@
+[Unit]
+Description=Health-check site services and maintain anycast announcements
+After=network-online.target unbound.service chrony.service
+Wants=unbound.service chrony.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/netops/site-services/anycast-health.sh

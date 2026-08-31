@@ -8,3 +8,36 @@ modules:
     http:
       preferred_ip_protocol: ip4
       follow_redirects: true
+
+  # Internal-zone correctness: does this resolver return the right answer for
+  # a name only we serve? Keeps passing when the internet path is down, which
+  # is the point — an upstream outage is not a resolver failure.
+  # Queries a dedicated sentinel record (never a device address) so it cannot
+  # go stale when a host renumbers. The name/address pair mirrors
+  # dns_probe_name/dns_probe_expect in
+  # ansible/roles/site_services/defaults/main.yml — change both together.
+  dns_internal:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: dns-probe.memhamwan.net
+      query_type: A
+      transport_protocol: udp
+      preferred_ip_protocol: ip4
+      valid_rcodes: [NOERROR]
+      validate_answer_rrs:
+        fail_if_not_matches_regexp:
+          - "dns-probe\\.memhamwan\\.net\\.\\s+\\d+\\s+IN\\s+A\\s+192\\.0\\.2\\.53"
+
+  # Recursion health: an external name. Alerted at warning only — a failure
+  # here means the upstream path is broken, not that the resolver should be
+  # withdrawn.
+  dns_recursion:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: cloudflare.com
+      query_type: A
+      transport_protocol: udp
+      preferred_ip_protocol: ip4
+      valid_rcodes: [NOERROR]
