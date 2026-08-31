@@ -17,7 +17,8 @@ scrape_configs:
 
   - job_name: node
     static_configs:
-      # node-exporter binds the docker bridge address only.
+      # rpi.sco's native node-exporter binds the docker bridge (scraped locally
+      # as host.docker.internal); remote service Pis bind their LAN IP.
       # `host`, not `device`: node-exporter uses `device` itself (filesystems,
       # NICs) — a static `device` label shadows it into exported_device and
       # silently breaks every per-device node query
@@ -25,6 +26,10 @@ scrape_configs:
         labels:
           site: sco
           host: rpi.sco
+      - targets: [44.34.128.108:9100]
+        labels:
+          site: hil
+          host: rpi.hil
 
   # RouterOS API metrics for the whole fleet via mktxp (one endpoint)
   - job_name: mktxp
