@@ -1,0 +1,6 @@
+# Managed by the netops linux_baseline role — do not edit on the host.
+# Operators authenticate by SSH key (password login disabled); passwordless sudo
+# lets them run the become-based plays. The SSH key is the trust anchor.
+{% for op in linux_baseline_operators %}
+{{ op }} ALL=(ALL) NOPASSWD:ALL
+{% endfor %}

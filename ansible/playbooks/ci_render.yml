@@ -219,6 +219,7 @@
         - chrony-client.conf.j2
         - 52unattended-upgrades-local.j2
         - prometheus-node-exporter.default.j2
+        - sudoers-operators.j2
 
     - name: The rendered sshd drop-ins carry the configured port + login group
       ansible.builtin.assert:

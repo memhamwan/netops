@@ -1,26 +1,33 @@
 ---
-# Templated (not static): the port and login-gate group come from role vars,
-# so an inventory override actually takes effect in sshd's config.
+# Templated (not static): port + login-gate group come from role vars.
 #
-# Install then validate the EFFECTIVE config. If sshd -t rejects it, restore
-# each drop-in to what it was before this run (or remove it if it's new) so a
-# later restart/reboot can't load a broken config and lock the host out — rpi.sco
-# already carries a known-good 10-netops-ports.conf from the old backup_host
-# task, and nuking it would drop the :222 port Ansible reconnects on.
+# Snapshot BEFORE the install/validate block, so a REAL snapshot failure (e.g. a
+# full disk) aborts here — never inside the block, where the rescue would then
+# delete an original it couldn't back up. rpi.sco already carries a known-good
+# 10-netops-ports.conf from the old backup_host task; rollback must preserve it
+# (the :222 port Ansible reconnects on).
+- name: Stat existing sshd drop-ins
+  ansible.builtin.stat:
+    path: "/etc/ssh/sshd_config.d/{{ item }}"
+  loop:
+    - 10-netops-ports.conf
+    - 20-hardening.conf
+  register: ssh_dropins_before
+
+- name: Snapshot existing drop-ins (a real copy failure aborts before we touch anything)
+  ansible.builtin.copy:
+    src: "{{ item.stat.path }}"
+    dest: "/etc/ssh/sshd_config.d/.{{ item.item }}.netops-bak"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ ssh_dropins_before.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  changed_when: false
+
 - name: Install + validate sshd drop-ins (rolled back if invalid)
   block:
-    - name: Snapshot any existing sshd drop-ins (for rollback)
-      ansible.builtin.copy:
-        src: "/etc/ssh/sshd_config.d/{{ item }}"
-        dest: "/etc/ssh/sshd_config.d/.{{ item }}.netops-bak"
-        remote_src: true
-        mode: "0644"
-      loop:
-        - 10-netops-ports.conf
-        - 20-hardening.conf
-      failed_when: false   # no source = no prior file; nothing to snapshot
-      changed_when: false
-
     - name: Install sshd drop-ins (ports + key-only hardening)
       ansible.builtin.template:
         src: "ssh/{{ item }}.j2"

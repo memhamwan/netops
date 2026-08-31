@@ -11,16 +11,32 @@
   register: linux_baseline_sysctl_file
 
 # Apply/read/assert are wrapped so that if a higher-precedence file forced
-# strict rp_filter, the rescue restores loose mode LIVE before failing —
-# otherwise `sysctl --system` would leave the running kernel strict (anycast
-# broken) even though the play aborted.
+# strict rp_filter, the rescue restores loose mode LIVE before failing.
 - name: Apply and validate rp_filter is loose
   when: not ansible_check_mode
   block:
+    # ALWAYS apply (not just when our file changed) — otherwise a run where our
+    # drop-in is unchanged would skip the apply, and the assert would pass on
+    # stale live values while a reboot still loads a conflicting strict config.
     - name: Apply sysctl
       ansible.builtin.command: sysctl --system
-      when: linux_baseline_sysctl_file.changed
       changed_when: linux_baseline_sysctl_file.changed
+
+    # sysctl --system sets conf.all/default.*, but already-existing interfaces
+    # keep their current per-interface values (send_redirects has OR semantics,
+    # so all=0 alone won't stop an eth0 that inherited the kernel default 1).
+    # Converge the live interfaces for the per-interface hardening keys.
+    - name: Converge per-interface hardening on existing interfaces
+      ansible.builtin.shell: |
+        set -eu
+        for d in /proc/sys/net/ipv4/conf/*/; do
+          for k in send_redirects accept_redirects accept_source_route; do
+            if [ -w "$d$k" ]; then echo 0 > "$d$k"; fi
+          done
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     - name: Read effective rp_filter (all + default)
       ansible.builtin.command: sysctl -n net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter

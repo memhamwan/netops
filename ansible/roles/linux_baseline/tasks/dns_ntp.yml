@@ -25,3 +25,14 @@
         dest: /etc/chrony/conf.d/10-netops-client.conf
         mode: "0644"
       notify: restart chrony
+
+    # conf.d is additive — stock chrony.conf still ships its default pool and a
+    # DHCP sourcedir, so the drop-in above ADDS the anycast servers rather than
+    # making them exclusive. Comment those out so only the anycast NTP is used.
+    # Idempotent: the regex won't match an already-commented line.
+    - name: Use only the anycast NTP servers (comment the distro pool + DHCP)
+      ansible.builtin.replace:
+        path: /etc/chrony/chrony.conf
+        regexp: '^(\s*(?:pool|server)\s+\S*\.pool\.ntp\.org\b.*|\s*sourcedir\s+/run/chrony-dhcp\b.*)$'
+        replace: '# \g<0>'
+      notify: restart chrony
