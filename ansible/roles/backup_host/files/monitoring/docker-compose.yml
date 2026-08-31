@@ -126,7 +126,3 @@ services:
       # mktxp.conf is rendered by the backup_host role from inventory + sops
       # (holds the API password); _mktxp.conf is installed alongside it
       - /var/lib/netops/mktxp:/etc/mktxp
-
-  # node-exporter runs NATIVELY now (linux_baseline role), no longer in this
-  # stack. It still binds 172.17.0.1:9100, so Prometheus keeps scraping it at
-  # host.docker.internal:9100 unchanged.

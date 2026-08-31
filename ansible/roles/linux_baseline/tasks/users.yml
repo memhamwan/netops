@@ -24,22 +24,18 @@
     key: "{% for f in query('fileglob', linux_baseline_operator_keys_dir ~ '/' ~ item ~ '_*.pub') | sort %}{{ lookup('file', f) }}\n{% endfor %}"
   loop: "{{ linux_baseline_operators }}"
 
-- name: Check which imaging leftover accounts exist
+# Read the whole passwd database so we can lock ONLY accounts that exist.
+- name: Read passwd database
   ansible.builtin.getent:
     database: passwd
-    key: "{{ item }}"
-  loop: "{{ linux_baseline_lock_accounts }}"
-  register: linux_baseline_imaging_accounts
-  failed_when: false
-  changed_when: false
 
-# Lock password login on the default pi/meshtastic accounts if present. Only
-# the password is locked — the account (and any service running as it) stays.
+# Lock password login on the default pi/meshtastic accounts if present. Only the
+# password is locked — the account (and any service running as it) stays. Guard
+# on the passwd fact (not a suppressed getent failure), so `user` never creates
+# a locked pi/meshtastic account that wasn't there.
 - name: Lock password login on leftover imaging accounts
   ansible.builtin.user:
-    name: "{{ item.item }}"
+    name: "{{ item }}"
     password_lock: true
-  loop: "{{ linux_baseline_imaging_accounts.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-  when: not (item.failed | default(false))
+  loop: "{{ linux_baseline_lock_accounts }}"
+  when: item in ansible_facts.getent_passwd

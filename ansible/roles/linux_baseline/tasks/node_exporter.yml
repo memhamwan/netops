@@ -3,30 +3,17 @@
 # patched via unattended-upgrades, and it needs no container runtime.
 # Debian's postinst starts node-exporter immediately with a stock 0.0.0.0:9100
 # listener — on a remotely-scraped host that briefly exposes it on every
-# interface before our bind address is set (and the firewall is P2). Block
-# service start during install; the enable task below brings it up once the
-# args are in place. policy-rc.d is removed even if the install fails.
-- name: Install node-exporter without auto-starting it
-  block:
-    - name: Deny service auto-start during package install
-      ansible.builtin.copy:
-        dest: /usr/sbin/policy-rc.d
-        content: |
-          #!/bin/sh
-          exit 101
-        mode: "0755"
-
-    - name: node-exporter package
-      ansible.builtin.apt:
-        name: prometheus-node-exporter
-        state: present
-        update_cache: true
-        cache_valid_time: 3600
-  always:
-    - name: Re-enable service starts
-      ansible.builtin.file:
-        path: /usr/sbin/policy-rc.d
-        state: absent
+# interface before our bind address is set (firewall is P2). policy_rc_d makes
+# apt install a temporary policy-rc.d that blocks the auto-start (and
+# preserves/restores any pre-existing host policy); the enable task below starts
+# it once the args are in place.
+- name: node-exporter package (auto-start blocked until the bind is configured)
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
 
 - name: Textfile collector dir (shared with the service-role metric writers)
   ansible.builtin.file:

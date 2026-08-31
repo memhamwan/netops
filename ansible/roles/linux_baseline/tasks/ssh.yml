@@ -1,20 +1,37 @@
 ---
 # Templated (not static): the port and login-gate group come from role vars,
 # so an inventory override actually takes effect in sshd's config.
-- name: Install sshd drop-ins (ports + key-only hardening)
-  ansible.builtin.template:
-    src: "ssh/{{ item }}.j2"
-    dest: "/etc/ssh/sshd_config.d/{{ item }}"
-    mode: "0644"
-  loop:
-    - 10-netops-ports.conf
-    - 20-hardening.conf
-  notify: reload ssh
+#
+# Install then validate the EFFECTIVE config; if sshd -t rejects it, remove the
+# just-installed drop-ins so a later restart/reboot can't load a broken config
+# and lock the host out. The running daemon (still on the old config, since the
+# reload handler hasn't fired) survives either way.
+- name: Install + validate sshd drop-ins (rolled back if invalid)
+  block:
+    - name: Install sshd drop-ins (ports + key-only hardening)
+      ansible.builtin.template:
+        src: "ssh/{{ item }}.j2"
+        dest: "/etc/ssh/sshd_config.d/{{ item }}"
+        mode: "0644"
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf
+      notify: reload ssh
 
-# Validate the EFFECTIVE config (the drop-ins are already in place) before the
-# reload handler can run. A bad drop-in aborts the play here, so the reload
-# never applies a config that would lock us out.
-- name: Validate sshd config
-  ansible.builtin.command: sshd -t
-  changed_when: false
-  check_mode: false
+    - name: Validate sshd config
+      ansible.builtin.command: sshd -t
+      changed_when: false
+      check_mode: false
+  rescue:
+    - name: Remove the invalid drop-ins (leave a working sshd on stock config)
+      ansible.builtin.file:
+        path: "/etc/ssh/sshd_config.d/{{ item }}"
+        state: absent
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf
+    - name: Fail — sshd config was invalid, drop-ins reverted
+      ansible.builtin.fail:
+        msg: >-
+          sshd -t rejected the linux_baseline drop-ins; they were removed so the
+          host stays reachable on stock sshd. Fix the template/vars and re-run.

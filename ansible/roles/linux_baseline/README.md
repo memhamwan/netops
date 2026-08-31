@@ -49,4 +49,3 @@ with it, journald `Storage=volatile` (the log agent reads `/run/log/journal`).
   the LAN IP and is not yet firewalled — that gap closes with the P2 firewall.
 - **`rp_filter=2` is load-bearing** for anycast; do not let a CIS/hardening
   drop-in reassert `1` (effective mode is `max(all, iface)`).
-</content>
