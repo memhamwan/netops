@@ -197,9 +197,21 @@
   vars:
     render_dir: "{{ playbook_dir }}/../build/rendered/linux-baseline"
   tasks:
+    # include_vars outranks inventory, so capture the inventory node-exporter
+    # bind override first and reapply it after, or the render would test the
+    # default expression instead of the deployed 172.17.0.1:9100.
+    - name: Preserve inventory node-exporter bind override
+      ansible.builtin.set_fact:
+        ci_ne_listen: "{{ linux_baseline_node_exporter_listen | default('') }}"
+
     - name: Load linux_baseline defaults
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../roles/linux_baseline/defaults/main.yml"
+
+    - name: Reapply inventory node-exporter bind override
+      ansible.builtin.set_fact:
+        linux_baseline_node_exporter_listen: "{{ ci_ne_listen }}"
+      when: ci_ne_listen | length > 0
 
     - name: Render directory
       ansible.builtin.file:

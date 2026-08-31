@@ -16,3 +16,8 @@
   ansible.builtin.service:
     name: chrony
     state: restarted
+
+- name: reload networkmanager
+  ansible.builtin.systemd:
+    name: NetworkManager
+    state: reloaded

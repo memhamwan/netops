@@ -59,11 +59,15 @@
       ansible.builtin.command: sysctl -w net.ipv4.conf.all.rp_filter=2 net.ipv4.conf.default.rp_filter=2
       changed_when: true
 
-    - name: Fail — a higher-precedence sysctl.d file forced strict rp_filter
+    # Generic: this rescue catches ANY failure in the block (apply, the
+    # per-interface loop, the read, or the rp_filter assertion), so report the
+    # real error rather than always blaming a precedence override.
+    - name: Fail — sysctl apply/validation failed (loose rp_filter restored live)
       ansible.builtin.fail:
         msg: >-
-          Effective net.ipv4.conf.{all,default}.rp_filter came out strict, not
-          loose (2) — a vendor/precedence sysctl.d drop-in overrides the baseline
-          and would break anycast return paths. Loose mode was restored live;
-          resolve the conflict (raise the baseline's priority or remove the
-          strict drop-in) and re-run.
+          linux_baseline sysctl apply/validation failed:
+          {{ ansible_failed_result.msg | default('see the failed task above') }}.
+          If it was the rp_filter assertion, a higher-precedence sysctl.d drop-in
+          is forcing strict mode (which breaks anycast) — raise the baseline's
+          priority or remove the strict drop-in. Loose rp_filter was restored
+          live regardless.

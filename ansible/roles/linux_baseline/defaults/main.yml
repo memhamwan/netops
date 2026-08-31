@@ -36,7 +36,7 @@ linux_baseline_manage_node_exporter: true
 # restricts :9100 to the monitoring host). Default = this host's inventory IP
 # for remote scrape; hosts that run Prometheus locally in docker override this
 # to the docker-bridge gateway so the exporter stays off the public LAN.
-linux_baseline_node_exporter_listen: "{{ ip | default(ansible_host | default('127.0.0.1')) }}:9100"
+linux_baseline_node_exporter_listen: "{{ ip | default(ansible_host | default(inventory_hostname)) }}:9100"
 # Textfile collector dir — shared by the site_services health script and the
 # backup_host oxidized-freshness metrics, so it stays a real path (not tmpfs)
 # for now; the SD-tuning below covers the bigger write sources.

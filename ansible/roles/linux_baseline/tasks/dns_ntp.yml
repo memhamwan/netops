@@ -5,11 +5,33 @@
 # First pass: no ordinary Linux hosts exist yet, so this is inert today and
 # gets hardened when the first non-service host is onboarded.
 - name: Resolver → anycast DNS
-  ansible.builtin.template:
-    src: resolv.conf.j2
-    dest: /etc/resolv.conf
-    mode: "0644"
   when: linux_baseline_manage_resolver | bool
+  block:
+    - name: Is NetworkManager managing this host?
+      ansible.builtin.stat:
+        path: /etc/NetworkManager
+      register: linux_baseline_nm_dir
+
+    # Without this, NM's default handling puts the DHCP resolver back on the
+    # next network event; dns=none hands /etc/resolv.conf to us. Mirrors
+    # site_services. (systemd-resolved-managed hosts would need equivalent
+    # ownership — revisit when the first such ordinary host is onboarded.)
+    - name: NetworkManager must not rewrite resolv.conf
+      ansible.builtin.copy:
+        content: |
+          # Managed by the netops linux_baseline role.
+          [main]
+          dns=none
+        dest: /etc/NetworkManager/conf.d/90-netops-dns.conf
+        mode: "0644"
+      when: linux_baseline_nm_dir.stat.isdir | default(false)
+      notify: reload networkmanager
+
+    - name: Resolver points at the anycast DNS
+      ansible.builtin.template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        mode: "0644"
 
 - name: chrony (client) points at the anycast NTP addresses
   when: linux_baseline_manage_ntp_client | bool
