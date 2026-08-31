@@ -108,6 +108,9 @@
           - "'local-data: \"ntp.memhamwan.net. 300 IN A 44.34.132.3\"' in zone_text"
           - "'local-data: \"ntp2.memhamwan.net. 300 IN A 44.34.133.3\"' in zone_text"
           - "'local-data: \"ntp.leb.memhamwan.net. 300 IN A 44.34.128.181\"' in zone_text"
+          # the health-probe sentinel must be present with the value the probe
+          # expects, or the DNS liveness check withdraws on a name it can't resolve
+          - "'local-data: \"dns-probe.memhamwan.net. 300 IN A 192.0.2.53\"' in zone_text"
         quiet: true
       vars:
         zone_text: "{{ lookup('file', render_dir ~ '/unbound-local-zone.conf') }}"

@@ -33,3 +33,12 @@ dns_extra_records:
   # just isn't the name we hand out going forward. Revisit at M4 when the
   # legacy hosts are decommissioned (see the design doc).
   - {name: ntp.leb.memhamwan.net, type: A, value: 44.34.128.181}
+
+  # Health-probe sentinel: the DNS liveness check (dns_probe_name/expect in the
+  # site_services role, mirrored by the blackbox dns_internal module) resolves
+  # THIS name and expects THIS value. Deliberately a fixed RFC 5737 TEST-NET
+  # address — never a device or service IP — so the probe is decoupled from any
+  # renumbering: it proves "unbound is serving the internal zone" without going
+  # stale and withdrawing DNS when a real host changes address. Do not point it
+  # at a real host, and keep it in sync with dns_probe_expect + blackbox.yml.
+  - {name: dns-probe.memhamwan.net, type: A, value: 192.0.2.53}

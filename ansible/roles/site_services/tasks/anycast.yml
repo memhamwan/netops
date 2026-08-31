@@ -93,7 +93,12 @@
         src: netops-anycast-link.service.j2
         dest: /etc/systemd/system/netops-anycast-link.service
         mode: "0644"
-      notify: systemd reload
+      # restart (not just daemon-reload): a RemainAfterExit oneshot won't
+      # re-run on the later `state: started`, so a changed unit must be
+      # restarted to take effect; run health check then re-adds the /32s.
+      notify:
+        - restart anycast link
+        - run health check
 
     # NM would otherwise take ownership of the dummy and can flush addresses
     # the health script put there.

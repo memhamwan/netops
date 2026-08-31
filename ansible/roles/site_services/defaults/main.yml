@@ -93,10 +93,13 @@ dns_ip_ratelimit: 100
 # Health probe: a name from the *internal* zone, so the check keeps passing
 # when the internet path is down (an internet outage must not withdraw the
 # resolvers — internal names still resolve and withdrawing everywhere would
-# leave the network with none). Kept in sync with the `dns_internal` module in
-# roles/backup_host/files/monitoring/blackbox/blackbox.yml.
-dns_probe_name: rpi.sco.memhamwan.net
-dns_probe_expect: 44.34.128.45
+# leave the network with none). Points at a dedicated sentinel record (defined
+# in inventory/dns_extra_records.yml) rather than a device address, so a host
+# renumbering can never make this expectation stale and withdraw DNS. Kept in
+# sync with the `dns_internal` module in
+# roles/backup_host/files/monitoring/blackbox/blackbox.yml — change both.
+dns_probe_name: dns-probe.memhamwan.net
+dns_probe_expect: 192.0.2.53
 # Recursion probe (external name): reported, alerted at warning, never
 # withdraws an address.
 dns_recursion_probe_name: cloudflare.com

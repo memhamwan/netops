@@ -30,6 +30,18 @@
     name: frr
     state: restarted
 
+# The dummy is a RemainAfterExit oneshot: once active, `state: started` does
+# NOT re-run it, so a changed unit file (e.g. a renamed anycast_interface)
+# would leave the old interface live while frr and the health script target
+# the new one. Restart to reconcile. Ordered before "run health check" so the
+# recreated (empty) interface gets its /32s re-added on the same run rather
+# than waiting for the next timer tick.
+- name: restart anycast link
+  ansible.builtin.systemd:
+    name: netops-anycast-link.service
+    state: restarted
+    daemon_reload: true
+
 # Reconverge announcements immediately after a config change instead of
 # waiting for the next timer tick.
 - name: run health check
