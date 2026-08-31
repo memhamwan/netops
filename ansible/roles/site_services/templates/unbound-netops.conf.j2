@@ -15,7 +15,14 @@ server:
     # Answers CH TXT hostname.bind with the short hostname — this is what the
     # monitoring layer uses to tell which anycast instance answered, and what
     # the split-brain detector compares against the enrolled host list.
+    # hide-identity: no is load-bearing, not cosmetic: setting `identity` alone
+    # does not guarantee id.server/hostname.bind is answered (some builds/
+    # distro defaults refuse it), and the health script now pages split-brain
+    # on a reachable resolver that returns NO identity — a hidden identity would
+    # make this host flag *itself* the moment anycast is active. Version stays
+    # hidden; only the deliberately-published identity is exposed.
     identity: "{{ inventory_hostname | replace('.' ~ dns_zone, '') }}"
+    hide-identity: no
     hide-version: yes
 
     # Two client classes (see defaults/main.yml). Most-specific netblock wins,

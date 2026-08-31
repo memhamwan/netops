@@ -48,8 +48,15 @@ if [ -n "$($DIG @127.0.0.1 "$RECURSION_PROBE_NAME" A 2>/dev/null | head -1 || tr
   recursion_healthy=1
 fi
 
-# chrony CSV: refid,refname,stratum,reftime,systime_offset,last_offset,
-# rms_offset,freq,resid_freq,skew,root_delay,root_disp,update_interval,leap
+# chrony CSV (chronyc -c tracking) = 14 fields. Watch the count: the human
+# "Reference ID : <hex> (<name>)" line is TWO CSV fields, not one — chrony's
+# print_report emits one field per conversion specifier and drops the literal
+# " ( ) ", so %R(hex)=f1 and %s(name)=f2 are separate. That is what shifts
+# everything down by one from a naive 13-field reading and puts stratum at f3,
+# system-time offset at f5, and leap (the WORD "Normal", not a code) at f14:
+#  1 refid(hex)  2 refname  3 stratum  4 reftime  5 systime_offset
+#  6 last_offset 7 rms_offset 8 freq  9 resid_freq 10 skew 11 root_delay
+#  12 root_disp 13 update_interval 14 leap        (verified against client.c)
 ntp_healthy=0
 ntp_offset=0
 ntp_stratum=0
