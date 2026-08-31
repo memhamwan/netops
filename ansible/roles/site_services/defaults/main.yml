@@ -55,15 +55,40 @@ dns_reverse_zones:
   - 134.34.44.in-addr.arpa
   - 135.34.44.in-addr.arpa
 
-# Who may query the resolvers. AMPRNet plus the RFC1918 ranges the site
-# routers hand out on their NAT/DHCP scopes (those clients get these same
-# resolver IPs from DHCP today). Everything else is refused — er1 additionally
-# drops forwarded :53 to the service IPs at the edge.
-dns_allowed_cidrs:
-  - 44.0.0.0/8
+# ── Access control ─────────────────────────────────────────────────────────
+# This resolver does two jobs, and they get different reach:
+#
+#  1. RECURSION (resolving arbitrary external names). Fleet-only: the
+#     MemHamWAN allocation plus the RFC1918 scopes the site routers NAT behind
+#     (those clients are handed these resolver IPs by DHCP today). Deliberately
+#     NOT 44.0.0.0/8 — once the internal zone is reachable off-network (below),
+#     a broad recursion ACL is an open resolver (amplification/reflection).
+#  2. AUTHORITATIVE (answering internal memhamwan.net names + PTRs from the
+#     rendered local-data). Safe to serve to anyone — it publishes records, it
+#     does not recurse — so an off-network client can resolve a fleet name and
+#     SSH in over publicly-routed 44net.
+#
+# The split is enforced by unbound's purpose-built `refuse_non_local` action
+# for the public (serve local-data, refuse recursion — never an open resolver);
+# most-specific netblock wins, so the fleet ranges' `allow` gives them full
+# recursion. See templates/unbound-netops.conf.j2 and docs/site-services-design.md.
+dns_recursion_cidrs:
+  - 44.34.128.0/21
   - 10.0.0.0/8
   - 172.16.0.0/12
   - 192.168.0.0/16
+
+# Serve the internal zone authoritatively to the whole internet (0.0.0.0/0 via
+# refuse_non_local). false keeps internal names fleet-only (0.0.0.0/0 → refuse)
+# — set that until er1's :53 edge permit for the DNS service IPs is in place
+# (that edge change is gated; see docs/site-services-design.md).
+dns_authoritative_public: true
+
+# Per-client-IP query-rate cap for the public authoritative face, applied
+# before cache lookup (excess dropped) to blunt reflection/amplification. 0
+# disables. unbound marks ip-ratelimit experimental, but it is the right knob
+# for a public-facing surface; fleet clients rarely approach it.
+dns_ip_ratelimit: 100
 
 # Health probe: a name from the *internal* zone, so the check keeps passing
 # when the internet path is down (an internet outage must not withdraw the
@@ -84,7 +109,14 @@ ntp_upstream_servers:
   - 162.159.200.123
 ntp_upstream_pools:
   - pool.ntp.org
-ntp_allowed_cidrs: "{{ dns_allowed_cidrs }}"
+# NTP stays AMPRNet + RFC1918 scoped (not public — only DNS is served
+# off-network). Kept explicit rather than reusing the narrower DNS recursion
+# list, so tightening DNS recursion does not silently change who NTP serves.
+ntp_allowed_cidrs:
+  - 44.0.0.0/8
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
 # Orphan stratum: when every upstream is unreachable (site islanded), the
 # service hosts agree among themselves rather than going unsynchronised, so
 # log timestamps across the island stay comparable. Orphan mode is NOT a

@@ -18,13 +18,24 @@ server:
     identity: "{{ inventory_hostname | replace('.' ~ dns_zone, '') }}"
     hide-version: yes
 
-    # Default-deny. AMPRNet plus the RFC1918 scopes the site routers NAT
-    # behind (those clients are handed these resolvers by DHCP today).
-    access-control: 0.0.0.0/0 refuse
+    # Two client classes (see defaults/main.yml). Most-specific netblock wins,
+    # so the fleet `allow`s override the 0.0.0.0/0 entry:
+    #  • fleet ranges + localhost → allow: full recursion + local-data.
+    #  • everyone else → refuse_non_local when we serve the internal zone
+    #    publicly (authoritative local-data only, recursion REFUSED — so this
+    #    can never be an open resolver), else plain refuse.
+    access-control: 0.0.0.0/0 {{ 'refuse_non_local' if dns_authoritative_public | bool else 'refuse' }}
     access-control: 127.0.0.0/8 allow
-{% for cidr in dns_allowed_cidrs %}
+{% for cidr in dns_recursion_cidrs %}
     access-control: {{ cidr }} allow
 {% endfor %}
+{% if dns_authoritative_public | bool and dns_ip_ratelimit | int > 0 %}
+
+    # Per-IP qps cap on the public authoritative face, applied before the
+    # cache lookup; excess is dropped. Blunts reflection/amplification.
+    # (unbound marks this experimental, but it is the right knob here.)
+    ip-ratelimit: {{ dns_ip_ratelimit | int }}
+{% endif %}
 
     # DNSSEC validation stays on for the public tree (the root anchor comes
     # from the packaged root-auto-trust-anchor-file config). Internal names are

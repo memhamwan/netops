@@ -94,6 +94,16 @@ HIL whose missing auth caused the type-mismatch flood.
   Cloudflare zone. Do not add public service names (grafana, prometheus,
   alertmanager) to `dns_extra_records.yml` — shadowing them would break the
   Caddy vhosts and their certificates.
+- **Recursion vs authoritative are split in the ACL.** Recursion is fleet-only
+  (`dns_recursion_cidrs`: `44.34.128.0/21` + RFC1918, *not* all of 44/8); the
+  internal zone is served authoritatively to `0.0.0.0/0` via `refuse_non_local`
+  (`dns_authoritative_public`, default true), which answers local-data but
+  refuses recursion, so it can never be an open resolver. `ip-ratelimit` caps
+  the public face. `ci_render.yml` pins that `0.0.0.0/0` is never `allow` in
+  either switch position. This is what lets an off-network client resolve a
+  fleet name to SSH in — but reachability also needs the gated er1 :53 permit
+  (see `docs/site-services-design.md`). NTP stays fleet/AMPRNet-scoped
+  (`ntp_allowed_cidrs`), not public.
 - **Zone data is rendered, not transferred.** Every service host gets an
   identical file from the inventory; the health script exports its checksum so
   a host that missed a deploy surfaces as `ZoneDataSkew` instead of quietly

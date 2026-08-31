@@ -140,3 +140,45 @@
         quiet: true
       vars:
         frr_text: "{{ lookup('file', render_dir ~ '/frr.conf') }}"
+
+    # The open-resolver guard, asserted rather than assumed. With public auth
+    # on (the default, rendered above) the 0.0.0.0/0 face must be
+    # refuse_non_local — serve authoritative local-data, never recurse — and
+    # must NEVER be `allow`, which would be an open resolver. Recursion is
+    # fleet reach only, never all of 44/8.
+    - name: unbound never exposes recursion to the public (public auth on)
+      ansible.builtin.assert:
+        that:
+          - "'access-control: 0.0.0.0/0 refuse_non_local' in acl"
+          - "'access-control: 0.0.0.0/0 allow' not in acl"
+          - "'ip-ratelimit:' in acl"
+          - "'access-control: 44.34.128.0/21 allow' in acl"
+          - "'access-control: 44.0.0.0/8 allow' not in acl"
+        quiet: true
+      vars:
+        acl: "{{ lookup('file', render_dir ~ '/unbound-netops.conf') }}"
+
+    # set_fact (not template_vars/task-vars) so it outranks the include_vars
+    # default; render the other switch position and pin it too, so a future
+    # edit that widens the public face fails CI instead of shipping.
+    - name: Flip public auth off for the second render
+      ansible.builtin.set_fact:
+        dns_authoritative_public: false
+
+    - name: Render unbound with public auth off
+      ansible.builtin.template:
+        src: ../roles/site_services/templates/unbound-netops.conf.j2
+        dest: "{{ render_dir }}/unbound-netops.conf.public-off"
+        mode: "0644"
+
+    - name: With public auth off the internal zone stays fleet-only
+      ansible.builtin.assert:
+        that:
+          # full directive, not a bare 'refuse_non_local' — that substring
+          # also appears in the explanatory comment block above the rule.
+          - "'access-control: 0.0.0.0/0 refuse' in acl_off"
+          - "'access-control: 0.0.0.0/0 refuse_non_local' not in acl_off"
+          - "'access-control: 0.0.0.0/0 allow' not in acl_off"
+        quiet: true
+      vars:
+        acl_off: "{{ lookup('file', render_dir ~ '/unbound-netops.conf.public-off') }}"

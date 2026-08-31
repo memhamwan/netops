@@ -51,8 +51,12 @@ Other facts that shape the design:
 - Site routers use the `AMPR-default` in/out filters (accept 44/8 + default),
   and redistribute as **type-1 externals** — type-1 metrics accumulate
   internal cost, which is exactly what makes "nearest instance wins" work.
-- er1.atl drops *forwarded* udp/tcp 53 to 44.34.132.1 (open-resolver
-  protection at the edge). Keep an equivalent posture.
+- er1.atl currently drops *forwarded* udp/tcp 53 to 44.34.132.1 (open-resolver
+  protection at the edge). That protection moves into the resolver itself (the
+  authoritative-only public face, below), so the edge posture changes from
+  "block :53" to "permit :53 to the DNS service IPs only" — a gated router
+  change spec'd in
+  [Authoritative to the public](#authoritative-to-the-public-off-network-access).
 - rpi.sco has headroom (4 cores, ~2.4 GB free) but its own resolv.conf
   currently points at Tailscale MagicDNS (100.100.100.100) — a tailnet
   dependency this role should remove (see
@@ -68,10 +72,15 @@ Other facts that shape the design:
 Goals: recursive DNS, authoritative internal DNS, and NTP that survive the
 loss of any single site; zero client-side changes; health-coupled route
 withdrawal; config-as-code in this repo with the inventory as the data source.
+Also serve the internal zone **authoritatively to off-network clients** over
+publicly-routed 44net, so a fleet name resolves from home to SSH in — see
+[Authoritative to the public](#authoritative-to-the-public-off-network-access).
 
-Non-goals (for now): serving DNS/NTP to the wider 44net/internet; DHCP
-service; replacing Cloudflare as public-zone host; the wg-mgmt/bastion
-question (revisit after this lands, per README).
+Non-goals (for now): public *recursion* — the resolvers must never be an open
+recursive resolver; authoritative-to-public is a separate, safe thing and is a
+goal, general recursion for the world is not. Also: serving NTP to the wider
+internet; DHCP service; replacing Cloudflare as public-zone host; the
+wg-mgmt/bastion question (revisit after this lands, per README).
 
 ### Where services run
 
@@ -81,10 +90,16 @@ alert delivery); they must not share fate with the container runtime, and frr
 and chrony want raw sockets/adjtime on the host anyway.
 
 - **unbound** — recursive resolver, listening on the anycast DNS IPs +
-  127.0.0.1 + the host's unicast IP (for pre-anycast testing). ACL: allow
-  44.0.0.0/8 + RFC1918 (site NAT scopes hand these resolvers to 192.168/10.x
-  clients today), deny the rest. qname-minimisation on; DNSSEC validation on
-  for the public tree, local zones marked insecure.
+  127.0.0.1 + the host's unicast IP (for pre-anycast testing). The ACL splits
+  the resolver's two jobs: **recursion** is fleet-only (`44.34.128.0/21` +
+  RFC1918 — the site NAT scopes hand these resolvers to 192.168/10.x clients
+  today; deliberately *not* all of 44/8, which would be an open resolver once
+  :53 is reachable off-network), while the **authoritative** internal zone is
+  served to everyone (`0.0.0.0/0`) via unbound's `refuse_non_local` action,
+  which answers local-data and refuses recursion. `ip-ratelimit` caps the
+  public face. qname-minimisation on; DNSSEC validation on for the public
+  tree, local zones marked insecure. `dns_authoritative_public: false` keeps
+  internal names fleet-only until the edge :53 permit lands.
 - **internal zones: rendered from git, not clustered.** The "clustered auth
   DNS" idea becomes: zone data lives in the repo (device records generated
   from `ansible/inventory/hosts.yml` — realizing the README's "intended feed
@@ -111,6 +126,44 @@ and chrony want raw sockets/adjtime on the host anyway.
   redistributes **connected**, guarded by a route-map + prefix-list that
   matches *exactly* the service /32s, as type-1 external. ospfd never runs on
   the dummies and stays passive everywhere except the LAN interface.
+
+### Authoritative to the public (off-network access)
+
+The resolver does two jobs, and they carry very different risk if opened up:
+
+- **Authoritative** — answering internal `memhamwan.net` names (and PTRs) from
+  the rendered local-data. Serving this to the whole internet is *safe and
+  ordinary* — it is what every public nameserver does. The only cost is
+  disclosure: internal hostnames↔IPs become world-readable, which for a Part-97
+  network that can't encrypt over the air anyway is a non-issue.
+- **Recursion** — resolving arbitrary external names for a client. Serving
+  *this* broadly is an **open resolver**: found by scanners within hours and
+  abused for amplification/reflection DDoS. Never open this to the world.
+
+The point of separating them is Ryan's use case: resolve a fleet name from a
+home internet connection to SSH to a machine over publicly-routed 44net. That
+needs the *authoritative* half public, and must keep the *recursive* half shut.
+
+**Mechanism.** unbound's purpose-built `refuse_non_local` access-control action
+for `0.0.0.0/0` — "only allowed to query for the authoritative local-data, not
+full recursion". Most-specific-netblock wins, so the fleet ranges' `allow`
+gives them full recursion while everyone else gets authoritative-only. No
+views (their inheritance rules are an open-resolver foot-gun: a fleet netblock
+with no explicit view entry silently inherits the `0.0.0.0/0` view).
+`ip-ratelimit` caps per-client qps before the cache to blunt amplification.
+`ci_render.yml` asserts, in both switch positions, that `0.0.0.0/0` is
+`refuse_non_local`/`refuse` and **never** `allow`, and that 44/8 never gets
+recursion — so a future edit that widens the public face fails CI.
+
+**Edge change (gated).** With the resolver itself now refusing public
+recursion, er1's blanket `:53` drop is no longer the open-resolver control and
+can be relaxed to a scoped permit: forward udp/tcp 53 to **44.34.132.1 and
+44.34.133.1 only** (the DNS service IPs). NTP and every other service IP stay
+blocked at the edge — only DNS is served off-network. This touches a router,
+so it is gated on Ryan's review like every router-config change; it is
+sequenced with anycast going live (M2) and is inert until then. `defaults`
+ship `dns_authoritative_public: true`, but nothing is reachable from outside
+until this edge permit is applied.
 
 ### Health-coupled withdrawal
 
@@ -395,7 +448,9 @@ Implemented alongside the role (all validated in CI, none of it running yet):
 4. **M4 — hardening + cleanup.** Fleet external-route allowlist (with
    `ospf_auth`); decommission legacy LEB service hosts on LEB's return
    (salvage zone data first); update `routeros_baseline` NTP/DNS defaults to
-   note the IPs are now anycast; revisit er1's port-53 edge drops.
+   note the IPs are now anycast. (The er1 :53 edge permit for public
+   authoritative access is spec'd under "Authoritative to the public" and
+   applied on its own review when anycast goes live, not deferred to here.)
 
 ## Open questions for review
 
