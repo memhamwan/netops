@@ -2,9 +2,7 @@
 # rp_filter landmine: strict (=1) silently drops anycast/OSPF asymmetric return
 # traffic. Install our loose (=2) drop-in, apply, then assert the EFFECTIVE
 # all/default values are actually loose. Validating the resulting values (not a
-# raw-text scan) catches a vendor/precedence override regardless of load order,
-# and doesn't false-positive on a stray per-interface `1` that max(2,1)=2 makes
-# harmless.
+# raw-text scan) catches a vendor/precedence override regardless of load order.
 - name: Install anycast-safe sysctl drop-in
   ansible.builtin.copy:
     src: sysctl/50-netops-baseline.conf
@@ -12,28 +10,39 @@
     mode: "0644"
   register: linux_baseline_sysctl_file
 
-- name: Apply sysctl
-  ansible.builtin.command: sysctl --system
-  when: linux_baseline_sysctl_file.changed
-  changed_when: linux_baseline_sysctl_file.changed
-
-# Validate the applied state; skipped in check mode where nothing was applied.
-- name: Read effective rp_filter (all + default)
-  ansible.builtin.command: sysctl -n net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter
-  register: linux_baseline_rpf
-  changed_when: false
+# Apply/read/assert are wrapped so that if a higher-precedence file forced
+# strict rp_filter, the rescue restores loose mode LIVE before failing —
+# otherwise `sysctl --system` would leave the running kernel strict (anycast
+# broken) even though the play aborted.
+- name: Apply and validate rp_filter is loose
   when: not ansible_check_mode
+  block:
+    - name: Apply sysctl
+      ansible.builtin.command: sysctl --system
+      when: linux_baseline_sysctl_file.changed
+      changed_when: linux_baseline_sysctl_file.changed
 
-- name: Effective rp_filter must be loose (2) — anycast/OSPF safe
-  ansible.builtin.assert:
-    that:
-      - linux_baseline_rpf.stdout_lines | map('int') | min == 2
-      - linux_baseline_rpf.stdout_lines | map('int') | max == 2
-    fail_msg: >-
-      Effective net.ipv4.conf.{all,default}.rp_filter is
-      {{ linux_baseline_rpf.stdout_lines }}, not loose (2) — a vendor/precedence
-      sysctl.d drop-in is overriding the baseline and anycast return paths would
-      break. Resolve the conflict (raise our drop-in's priority or remove the
-      strict one).
-    quiet: true
-  when: not ansible_check_mode
+    - name: Read effective rp_filter (all + default)
+      ansible.builtin.command: sysctl -n net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter
+      register: linux_baseline_rpf
+      changed_when: false
+
+    - name: Effective rp_filter must be loose (2) — anycast/OSPF safe
+      ansible.builtin.assert:
+        that:
+          - linux_baseline_rpf.stdout_lines | map('int') | min == 2
+          - linux_baseline_rpf.stdout_lines | map('int') | max == 2
+        quiet: true
+  rescue:
+    - name: Restore loose rp_filter live (don't leave anycast broken on failure)
+      ansible.builtin.command: sysctl -w net.ipv4.conf.all.rp_filter=2 net.ipv4.conf.default.rp_filter=2
+      changed_when: true
+
+    - name: Fail — a higher-precedence sysctl.d file forced strict rp_filter
+      ansible.builtin.fail:
+        msg: >-
+          Effective net.ipv4.conf.{all,default}.rp_filter came out strict, not
+          loose (2) — a vendor/precedence sysctl.d drop-in overrides the baseline
+          and would break anycast return paths. Loose mode was restored live;
+          resolve the conflict (raise the baseline's priority or remove the
+          strict drop-in) and re-run.

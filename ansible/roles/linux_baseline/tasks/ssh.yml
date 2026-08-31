@@ -2,12 +2,25 @@
 # Templated (not static): the port and login-gate group come from role vars,
 # so an inventory override actually takes effect in sshd's config.
 #
-# Install then validate the EFFECTIVE config; if sshd -t rejects it, remove the
-# just-installed drop-ins so a later restart/reboot can't load a broken config
-# and lock the host out. The running daemon (still on the old config, since the
-# reload handler hasn't fired) survives either way.
+# Install then validate the EFFECTIVE config. If sshd -t rejects it, restore
+# each drop-in to what it was before this run (or remove it if it's new) so a
+# later restart/reboot can't load a broken config and lock the host out — rpi.sco
+# already carries a known-good 10-netops-ports.conf from the old backup_host
+# task, and nuking it would drop the :222 port Ansible reconnects on.
 - name: Install + validate sshd drop-ins (rolled back if invalid)
   block:
+    - name: Snapshot any existing sshd drop-ins (for rollback)
+      ansible.builtin.copy:
+        src: "/etc/ssh/sshd_config.d/{{ item }}"
+        dest: "/etc/ssh/sshd_config.d/.{{ item }}.netops-bak"
+        remote_src: true
+        mode: "0644"
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf
+      failed_when: false   # no source = no prior file; nothing to snapshot
+      changed_when: false
+
     - name: Install sshd drop-ins (ports + key-only hardening)
       ansible.builtin.template:
         src: "ssh/{{ item }}.j2"
@@ -23,15 +36,29 @@
       changed_when: false
       check_mode: false
   rescue:
-    - name: Remove the invalid drop-ins (leave a working sshd on stock config)
+    - name: Restore the previous drop-in (or remove it if it was newly added)
+      ansible.builtin.shell: |
+        bak="/etc/ssh/sshd_config.d/.{{ item }}.netops-bak"
+        cur="/etc/ssh/sshd_config.d/{{ item }}"
+        if [ -f "$bak" ]; then mv -f "$bak" "$cur"; else rm -f "$cur"; fi
+      args:
+        executable: /bin/bash
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf
+      changed_when: true
+
+    - name: Fail — sshd config was invalid, previous config restored
+      ansible.builtin.fail:
+        msg: >-
+          sshd -t rejected the linux_baseline drop-ins; the previous config was
+          restored so the host stays reachable on its configured port. Fix the
+          template/vars and re-run.
+  always:
+    - name: Clean up any leftover snapshots
       ansible.builtin.file:
-        path: "/etc/ssh/sshd_config.d/{{ item }}"
+        path: "/etc/ssh/sshd_config.d/.{{ item }}.netops-bak"
         state: absent
       loop:
         - 10-netops-ports.conf
         - 20-hardening.conf
-    - name: Fail — sshd config was invalid, drop-ins reverted
-      ansible.builtin.fail:
-        msg: >-
-          sshd -t rejected the linux_baseline drop-ins; they were removed so the
-          host stays reachable on stock sshd. Fix the template/vars and re-run.
