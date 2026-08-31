@@ -1,0 +1,19 @@
+---
+# Only reached when linux_baseline_is_sdcard is true. The big SD-write win —
+# journald to RAM (Storage=volatile) — is deliberately NOT here: it moves the
+# journal to /run/log/journal, which the log-ship agent must read, so it lands
+# in P2 alongside the Alloy → Loki work (switching it on now would break the
+# host-journal ingestion the monitoring host already does from /var/log/journal).
+# P1 keeps only the shipping-independent reduction.
+- name: Gather service facts (to disable swap only if the unit exists)
+  ansible.builtin.service_facts:
+
+# No failed_when swallow: run only when the unit is present, and let a genuine
+# stop/disable failure fail the play (silently leaving swap on the SD card
+# defeats the purpose of this task).
+- name: Disable swap-to-SD (dphys-swapfile) if present
+  ansible.builtin.systemd:
+    name: dphys-swapfile
+    enabled: false
+    state: stopped
+  when: "'dphys-swapfile.service' in ansible_facts.services"

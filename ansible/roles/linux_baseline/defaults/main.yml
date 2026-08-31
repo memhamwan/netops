@@ -1,0 +1,66 @@
+---
+# linux_baseline — base config every MemHamWAN Linux host wants, the Linux
+# counterpart to routeros_baseline. Pulled in as a dependency by backup_host
+# and site_services (meta/main.yml), so it always runs first.
+#
+# P1 scope (this role today): ssh + hardening, operator/ansible users, native
+# node-exporter, SD-card write reduction, anycast-safe sysctl (incl. the
+# rp_filter landmine), a DNS/NTP client that YIELDS on hosts that run those
+# services, and unattended security upgrades. P2 (separate PR): the nftables
+# host firewall + sshguard, and Alloy log shipping to logs.memhamwan.net.
+# See README.md.
+
+# ── SSH ──────────────────────────────────────────────────────────────────
+linux_baseline_ssh_port: 222          # network-wide convention (alongside 22)
+linux_baseline_ssh_group: sshusers    # only members of this group may log in
+
+# ── Operators ────────────────────────────────────────────────────────────
+# Reuse the fleet operator identities. Keys live with routeros_baseline (the
+# single committed source) rather than being duplicated here; every
+# <operator>_*.pub in this dir is installed (ed25519 + rsa both, where present).
+linux_baseline_operators:
+  - turnrye
+  - seichold
+  - ae5au
+linux_baseline_operator_keys_dir: >-
+  {{ playbook_dir }}/../roles/routeros_baseline/files/operators
+# Default local login accounts left over from imaging (Raspberry Pi OS `pi`,
+# the meshtastic image account) get their password login locked.
+linux_baseline_lock_accounts:
+  - pi
+  - meshtastic
+
+# ── node-exporter (native, systemd — replaces per-host docker exporters) ───
+linux_baseline_manage_node_exporter: true
+# Bind to a specific address, never 0.0.0.0 (defense-in-depth; the P2 firewall
+# restricts :9100 to the monitoring host). Default = this host's inventory IP
+# for remote scrape; hosts that run Prometheus locally in docker override this
+# to the docker-bridge gateway so the exporter stays off the public LAN.
+linux_baseline_node_exporter_listen: "{{ ip | default(ansible_host | default(inventory_hostname)) }}:9100"
+# Textfile collector dir — shared by the site_services health script and the
+# backup_host oxidized-freshness metrics, so it stays a real path (not tmpfs)
+# for now; the SD-tuning below covers the bigger write sources.
+linux_baseline_textfile_dir: /var/lib/netops/node-exporter
+
+# ── DNS / NTP client (YIELDS on service hosts) ─────────────────────────────
+# On an ordinary host, point the resolver at the anycast DNS and run a plain
+# NTP client. On a host that RUNS unbound/chrony (site_services), set both
+# false — that role owns resolv.conf (127.0.0.1) and the chrony server, and a
+# baseline client would collide with it.
+linux_baseline_manage_resolver: true
+linux_baseline_manage_ntp_client: true
+linux_baseline_dns_servers: [44.34.132.1, 44.34.133.1]   # anycast resolvers
+linux_baseline_ntp_servers: [44.34.132.3, 44.34.133.3]   # anycast NTP (DHCP pair)
+linux_baseline_dns_search: memhamwan.net
+
+# ── SD-card write reduction (auto-gated on is_sdcard, detected at runtime) ──
+# P1 = swap-to-SD off only. journald-to-RAM is the bigger win but is coupled to
+# off-box log shipping (it moves the journal to /run/log/journal, which the log
+# agent must read), so it lands in P2 with Alloy.
+linux_baseline_sdcard_tuning: true    # applied only when the rootfs is on mmc
+
+# ── Unattended security upgrades ───────────────────────────────────────────
+linux_baseline_unattended_upgrades: true
+linux_baseline_unattended_mail: ryan@turnrye.com
+# Routing nodes must not reboot themselves mid-adjacency; reboot in a window.
+linux_baseline_unattended_auto_reboot: false

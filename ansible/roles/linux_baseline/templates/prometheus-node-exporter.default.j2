@@ -1,0 +1,4 @@
+# Managed by the netops linux_baseline role — do not edit on the host.
+# Bound to a specific address (never 0.0.0.0); the P2 host firewall restricts
+# :9100 to the monitoring host.
+ARGS="--web.listen-address={{ linux_baseline_node_exporter_listen }} --collector.textfile.directory={{ linux_baseline_textfile_dir }}"

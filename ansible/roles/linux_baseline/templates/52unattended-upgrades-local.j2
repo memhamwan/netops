@@ -1,0 +1,16 @@
+// Managed by the netops linux_baseline role — do not edit on the host.
+// Security-only. Routing nodes must not reboot themselves mid-adjacency, so
+// Automatic-Reboot is false — reboots happen in a controlled window.
+// APT config lists are ADDITIVE across snippets, so clear whatever an earlier
+// file (e.g. 50unattended-upgrades) added before declaring ours — otherwise
+// this can't enforce a security-only policy if an earlier origin allows more.
+#clear "Unattended-Upgrade::Origins-Pattern";
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+};
+{% if linux_baseline_unattended_mail %}
+Unattended-Upgrade::Mail "{{ linux_baseline_unattended_mail }}";
+Unattended-Upgrade::MailReport "on-change";
+{% endif %}
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "{{ 'true' if linux_baseline_unattended_auto_reboot | bool else 'false' }}";

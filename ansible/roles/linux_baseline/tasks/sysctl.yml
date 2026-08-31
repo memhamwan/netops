@@ -1,0 +1,73 @@
+---
+# rp_filter landmine: strict (=1) silently drops anycast/OSPF asymmetric return
+# traffic. Install our loose (=2) drop-in, apply, then assert the EFFECTIVE
+# all/default values are actually loose. Validating the resulting values (not a
+# raw-text scan) catches a vendor/precedence override regardless of load order.
+- name: Install anycast-safe sysctl drop-in
+  ansible.builtin.copy:
+    src: sysctl/50-netops-baseline.conf
+    dest: /etc/sysctl.d/50-netops-baseline.conf
+    mode: "0644"
+  register: linux_baseline_sysctl_file
+
+# Apply/read/assert are wrapped so that if a higher-precedence file forced
+# strict rp_filter, the rescue restores loose mode LIVE before failing.
+- name: Apply and validate rp_filter is loose
+  when: not ansible_check_mode
+  block:
+    # ALWAYS apply (not just when our file changed) — otherwise a run where our
+    # drop-in is unchanged would skip the apply, and the assert would pass on
+    # stale live values while a reboot still loads a conflicting strict config.
+    - name: Apply sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: linux_baseline_sysctl_file.changed
+
+    # sysctl --system sets conf.all/default.*, but already-existing interfaces
+    # keep their current per-interface values (send_redirects has OR semantics,
+    # so all=0 alone won't stop an eth0 that inherited the kernel default 1).
+    # Converge the live interfaces for the per-interface hardening keys.
+    - name: Converge per-interface hardening on existing interfaces
+      ansible.builtin.shell: |
+        set -eu
+        for d in /proc/sys/net/ipv4/conf/*/; do
+          for k in send_redirects accept_redirects accept_source_route; do
+            if [ -w "$d$k" ]; then echo 0 > "$d$k"; fi
+          done
+        done
+        for d in /proc/sys/net/ipv6/conf/*/; do
+          for k in accept_redirects accept_source_route accept_ra; do
+            if [ -w "$d$k" ]; then echo 0 > "$d$k"; fi
+          done
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Read effective rp_filter (all + default)
+      ansible.builtin.command: sysctl -n net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter
+      register: linux_baseline_rpf
+      changed_when: false
+
+    - name: Effective rp_filter must be loose (2) — anycast/OSPF safe
+      ansible.builtin.assert:
+        that:
+          - linux_baseline_rpf.stdout_lines | map('int') | min == 2
+          - linux_baseline_rpf.stdout_lines | map('int') | max == 2
+        quiet: true
+  rescue:
+    - name: Restore loose rp_filter live (don't leave anycast broken on failure)
+      ansible.builtin.command: sysctl -w net.ipv4.conf.all.rp_filter=2 net.ipv4.conf.default.rp_filter=2
+      changed_when: true
+
+    # Generic: this rescue catches ANY failure in the block (apply, the
+    # per-interface loop, the read, or the rp_filter assertion), so report the
+    # real error rather than always blaming a precedence override.
+    - name: Fail — sysctl apply/validation failed (loose rp_filter restored live)
+      ansible.builtin.fail:
+        msg: >-
+          linux_baseline sysctl apply/validation failed:
+          {{ ansible_failed_result.msg | default('see the failed task above') }}.
+          If it was the rp_filter assertion, a higher-precedence sysctl.d drop-in
+          is forcing strict mode (which breaks anycast) — raise the baseline's
+          priority or remove the strict drop-in. Loose rp_filter was restored
+          live regardless.

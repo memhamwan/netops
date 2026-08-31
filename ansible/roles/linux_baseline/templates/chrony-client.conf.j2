@@ -1,0 +1,6 @@
+# Managed by the netops linux_baseline role — do not edit on the host.
+# Client only: points at the anycast NTP service addresses. Hosts that RUN the
+# NTP service (site_services) skip this file entirely.
+{% for s in linux_baseline_ntp_servers %}
+server {{ s }} iburst
+{% endfor %}

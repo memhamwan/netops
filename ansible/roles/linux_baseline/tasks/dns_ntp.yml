@@ -1,0 +1,63 @@
+---
+# DNS/NTP CLIENT config for ordinary hosts. On hosts that RUN these services
+# (site_services), both toggles are false — that role owns resolv.conf
+# (127.0.0.1) and the chrony server, and a baseline client would collide.
+# First pass: no ordinary Linux hosts exist yet, so this is inert today and
+# gets hardened when the first non-service host is onboarded.
+- name: Resolver → anycast DNS
+  when: linux_baseline_manage_resolver | bool
+  block:
+    - name: Is NetworkManager managing this host?
+      ansible.builtin.stat:
+        path: /etc/NetworkManager
+      register: linux_baseline_nm_dir
+
+    # Without this, NM's default handling puts the DHCP resolver back on the
+    # next network event; dns=none hands /etc/resolv.conf to us. Mirrors
+    # site_services. (systemd-resolved-managed hosts would need equivalent
+    # ownership — revisit when the first such ordinary host is onboarded.)
+    - name: NetworkManager must not rewrite resolv.conf
+      ansible.builtin.copy:
+        content: |
+          # Managed by the netops linux_baseline role.
+          [main]
+          dns=none
+        dest: /etc/NetworkManager/conf.d/90-netops-dns.conf
+        mode: "0644"
+      when: linux_baseline_nm_dir.stat.isdir | default(false)
+      notify: reload networkmanager
+
+    - name: Resolver points at the anycast DNS
+      ansible.builtin.template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        mode: "0644"
+
+- name: chrony (client) points at the anycast NTP addresses
+  when: linux_baseline_manage_ntp_client | bool
+  block:
+    - name: chrony package
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+
+    - name: chrony client config
+      ansible.builtin.template:
+        src: chrony-client.conf.j2
+        dest: /etc/chrony/conf.d/10-netops-client.conf
+        mode: "0644"
+      notify: restart chrony
+
+    # conf.d is additive — stock chrony.conf still ships its default pool and a
+    # DHCP sourcedir, so the drop-in above ADDS the anycast servers rather than
+    # making them exclusive. Comment those out so only the anycast NTP is used.
+    # Idempotent: the regex won't match an already-commented line.
+    - name: Use only the anycast NTP servers (comment the distro pool + DHCP)
+      ansible.builtin.replace:
+        # [ \t], not \s — under replace's multiline matching \s also matches
+        # newlines, so a blank line before a directive would swallow the newline
+        # and comment only the blank line, leaving the directive active.
+        path: /etc/chrony/chrony.conf
+        regexp: '^([ \t]*(?:pool|server)[ \t]+\S*\.pool\.ntp\.org\b.*|[ \t]*sourcedir[ \t]+/run/chrony-dhcp\b.*)$'
+        replace: '# \g<0>'
+      notify: restart chrony

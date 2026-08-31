@@ -1,0 +1,60 @@
+---
+# Native (apt) node-exporter — replaces per-host docker exporters. apt keeps it
+# patched via unattended-upgrades, and it needs no container runtime.
+# Debian's postinst starts node-exporter immediately with a stock 0.0.0.0:9100
+# listener — on a remotely-scraped host that briefly exposes it on every
+# interface before our bind address is set (firewall is P2). policy_rc_d makes
+# apt install a temporary policy-rc.d that blocks the auto-start (and
+# preserves/restores any pre-existing host policy); the enable task below starts
+# it once the args are in place.
+- name: node-exporter package (auto-start blocked until the bind is configured)
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Textfile collector dir (shared with the service-role metric writers)
+  ansible.builtin.file:
+    path: "{{ linux_baseline_textfile_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: node-exporter args (bind address + textfile dir)
+  ansible.builtin.template:
+    src: prometheus-node-exporter.default.j2
+    dest: /etc/default/prometheus-node-exporter
+    mode: "0644"
+  notify: restart node-exporter
+
+# Bind may target the docker-bridge gateway (172.17.0.1) on the monitoring
+# host, which only exists once docker is up; on other hosts it's the LAN IP,
+# available after the network is online. Order after both and retry so a bind
+# race at boot self-heals instead of failing the unit.
+- name: node-exporter override dir
+  ansible.builtin.file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    mode: "0755"
+
+- name: node-exporter start-ordering override
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/override.conf
+    mode: "0644"
+    content: |
+      # Managed by the netops linux_baseline role.
+      [Unit]
+      After=network-online.target docker.service
+      Wants=network-online.target
+      [Service]
+      Restart=on-failure
+      RestartSec=5
+  notify: restart node-exporter
+
+- name: Enable node-exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+    daemon_reload: true

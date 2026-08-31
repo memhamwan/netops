@@ -1,0 +1,74 @@
+---
+# Templated (not static): port + login-gate group come from role vars.
+#
+# Snapshot BEFORE the install/validate block, so a REAL snapshot failure (e.g. a
+# full disk) aborts here — never inside the block, where the rescue would then
+# delete an original it couldn't back up. rpi.sco already carries a known-good
+# 10-netops-ports.conf from the old backup_host task; rollback must preserve it
+# (the :222 port Ansible reconnects on).
+- name: Stat existing sshd drop-ins
+  ansible.builtin.stat:
+    path: "/etc/ssh/sshd_config.d/{{ item }}"
+  loop:
+    - 10-netops-ports.conf
+    - 20-hardening.conf
+  register: ssh_dropins_before
+
+- name: Snapshot existing drop-ins (a real copy failure aborts before we touch anything)
+  ansible.builtin.copy:
+    src: "{{ item.stat.path }}"
+    dest: "/etc/ssh/sshd_config.d/.{{ item.item }}.netops-bak"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ ssh_dropins_before.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  changed_when: false
+
+- name: Install + validate sshd drop-ins (rolled back if invalid)
+  block:
+    - name: Install sshd drop-ins (ports + key-only hardening)
+      ansible.builtin.template:
+        src: "ssh/{{ item }}.j2"
+        dest: "/etc/ssh/sshd_config.d/{{ item }}"
+        mode: "0644"
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf
+      notify: reload ssh
+
+    # Skipped in check mode: the template task above only simulates its writes
+    # there, so validating the on-disk config would validate the OLD files and
+    # could report a misleading pass. (CI validates the rendered drop-ins via
+    # ci_render.yml instead.)
+    - name: Validate sshd config
+      ansible.builtin.command: sshd -t
+      changed_when: false
+  rescue:
+    - name: Restore the previous drop-in (or remove it if it was newly added)
+      ansible.builtin.shell: |
+        bak="/etc/ssh/sshd_config.d/.{{ item }}.netops-bak"
+        cur="/etc/ssh/sshd_config.d/{{ item }}"
+        if [ -f "$bak" ]; then mv -f "$bak" "$cur"; else rm -f "$cur"; fi
+      args:
+        executable: /bin/bash
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf
+      changed_when: true
+
+    - name: Fail — sshd config was invalid, previous config restored
+      ansible.builtin.fail:
+        msg: >-
+          sshd -t rejected the linux_baseline drop-ins; the previous config was
+          restored so the host stays reachable on its configured port. Fix the
+          template/vars and re-run.
+  always:
+    - name: Clean up any leftover snapshots
+      ansible.builtin.file:
+        path: "/etc/ssh/sshd_config.d/.{{ item }}.netops-bak"
+        state: absent
+      loop:
+        - 10-netops-ports.conf
+        - 20-hardening.conf

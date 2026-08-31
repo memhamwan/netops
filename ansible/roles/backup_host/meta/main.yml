@@ -1,0 +1,5 @@
+---
+# Runs linux_baseline first (ssh/users/node-exporter/sysctl/SD/updates), then
+# this role layers the backup + monitoring stack on top.
+dependencies:
+  - role: linux_baseline

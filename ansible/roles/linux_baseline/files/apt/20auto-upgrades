@@ -1,0 +1,3 @@
+// Managed by the netops linux_baseline role — do not edit on the host.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";

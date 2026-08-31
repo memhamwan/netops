@@ -1,0 +1,23 @@
+---
+# reload, NOT restart: a reload re-reads sshd config without dropping the
+# established session, so a bad config change can't lock us out mid-play.
+- name: reload ssh
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+
+- name: restart node-exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    state: restarted
+    daemon_reload: true
+
+- name: restart chrony
+  ansible.builtin.service:
+    name: chrony
+    state: restarted
+
+- name: reload networkmanager
+  ansible.builtin.systemd:
+    name: NetworkManager
+    state: reloaded

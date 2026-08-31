@@ -3,12 +3,9 @@
 # retired deploy.sh. Secrets come from sops (loaded by the playbook);
 # fleet-derived files (router.db, ICMP targets, mktxp.conf) are templated
 # from the inventory at deploy time — the inventory is the only fleet list.
-- name: SSH on port 222 (network-wide convention) alongside 22
-  ansible.builtin.copy:
-    src: ssh/10-netops-ports.conf
-    dest: /etc/ssh/sshd_config.d/10-netops-ports.conf
-    mode: "0644"
-  notify: restart sshd
+# SSH :222 + hardening, operator users, native node-exporter, sysctl, and
+# SD-card tuning now come from the linux_baseline role (this role depends on it
+# — see meta/main.yml), so they are no longer here.
 
 # docker and sops are deliberately NOT installed here (install method is a
 # host-bootstrap decision — see README); everything apt-safe is
@@ -244,9 +241,15 @@
     - netops-full-backup.timer
     - netops-oxidized-metrics.timer
 
+# --remove-orphans reconciles the running state to the compose file, so a
+# service removed from the file (e.g. the node-exporter now run natively by
+# linux_baseline) is actually stopped/removed rather than left orphaned and
+# still bound to :9100.
 - name: Ensure both compose stacks are up
   ansible.builtin.command:
-    cmd: docker compose -f {{ netops_opt }}/{{ item }}/docker-compose.yml up -d
+    cmd: docker compose -f {{ netops_opt }}/{{ item }}/docker-compose.yml up -d --remove-orphans
   loop: [oxidized, monitoring]
   register: compose_up
-  changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr"
+  changed_when: >-
+    'Started' in compose_up.stderr or 'Created' in compose_up.stderr
+    or 'Recreated' in compose_up.stderr or 'Removed' in compose_up.stderr

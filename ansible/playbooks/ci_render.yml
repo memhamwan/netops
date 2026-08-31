@@ -185,3 +185,61 @@
         quiet: true
       vars:
         acl_off: "{{ lookup('file', render_dir ~ '/unbound-netops.conf.public-off') }}"
+
+# Same idea for linux_baseline: render its templates so a template error or
+# unresolved var is caught in CI — the high-risk SSH config especially must not
+# escape validation. Rendered against a real service host.
+- name: Render linux_baseline templates for validation
+  hosts: service_hosts
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build/rendered/linux-baseline"
+  tasks:
+    # include_vars outranks inventory, so capture the inventory node-exporter
+    # bind override first and reapply it after, or the render would test the
+    # default expression instead of the deployed 172.17.0.1:9100.
+    - name: Preserve inventory node-exporter bind override
+      ansible.builtin.set_fact:
+        ci_ne_listen: "{{ linux_baseline_node_exporter_listen | default('') }}"
+
+    - name: Load linux_baseline defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/linux_baseline/defaults/main.yml"
+
+    - name: Reapply inventory node-exporter bind override
+      ansible.builtin.set_fact:
+        linux_baseline_node_exporter_listen: "{{ ci_ne_listen }}"
+      when: ci_ne_listen | length > 0
+
+    - name: Render directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render templates
+      ansible.builtin.template:
+        src: "../roles/linux_baseline/templates/{{ item }}"
+        dest: "{{ render_dir }}/{{ item | basename | regex_replace('[.]j2$', '') }}"
+        mode: "0644"
+      loop:
+        - ssh/10-netops-ports.conf.j2
+        - ssh/20-hardening.conf.j2
+        - resolv.conf.j2
+        - chrony-client.conf.j2
+        - 52unattended-upgrades-local.j2
+        - prometheus-node-exporter.default.j2
+        - sudoers-operators.j2
+
+    - name: The rendered sshd drop-ins carry the configured port + login group
+      ansible.builtin.assert:
+        that:
+          - "'Port 222' in ports_text"
+          - "'AllowGroups sshusers' in hardening_text"
+          - "'PasswordAuthentication no' in hardening_text"
+        quiet: true
+      vars:
+        ports_text: "{{ lookup('file', render_dir ~ '/10-netops-ports.conf') }}"
+        hardening_text: "{{ lookup('file', render_dir ~ '/20-hardening.conf') }}"
