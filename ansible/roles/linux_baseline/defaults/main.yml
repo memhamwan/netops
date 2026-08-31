@@ -54,9 +54,10 @@ linux_baseline_ntp_servers: [44.34.132.3, 44.34.133.3]   # anycast NTP (DHCP pai
 linux_baseline_dns_search: memhamwan.net
 
 # ── SD-card write reduction (auto-gated on is_sdcard, detected at runtime) ──
+# P1 = swap-to-SD off only. journald-to-RAM is the bigger win but is coupled to
+# off-box log shipping (it moves the journal to /run/log/journal, which the log
+# agent must read), so it lands in P2 with Alloy.
 linux_baseline_sdcard_tuning: true    # applied only when the rootfs is on mmc
-linux_baseline_journald_runtime_max: 48M
-linux_baseline_rootfs_commit_secs: 600
 
 # ── Unattended security upgrades ───────────────────────────────────────────
 linux_baseline_unattended_upgrades: true

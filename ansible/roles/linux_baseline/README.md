@@ -21,15 +21,19 @@ by `backup_host` and `site_services`, so it always runs first.
   breaks anycast/OSPF asymmetric return paths — plus redirects/source-route off,
   syncookies, and anycast ARP hygiene. The role refuses to run if another
   drop-in asserts strict `rp_filter=1`.
-- **sdcard** — auto-gated on `is_sdcard`: journald to RAM (`Storage=volatile`,
-  no rsyslog forward), swap-to-SD disabled. The durable log copy lives in Loki.
+- **sdcard** — auto-gated on `is_sdcard`: swap-to-SD disabled. journald-to-RAM
+  (the bigger win) is deferred to P2 — it moves the journal to
+  `/run/log/journal`, which the log agent must read, so it's coupled to the
+  Alloy → Loki work (switching it on now would break the host-journal ingestion
+  the monitoring host already does from `/var/log/journal`).
 - **dns/ntp client** — points ordinary hosts at the anycast DNS/NTP. **Yields**
   on hosts that *run* those services (`site_services` sets the toggles false).
 - **updates** — security-only unattended-upgrades, no auto-reboot (routing nodes
   reboot in a window).
 
 **P2 (separate PR):** nftables default-deny host firewall (OSPF/anycast-aware)
-+ sshguard; Grafana Alloy log shipping to `logs.memhamwan.net` → Loki.
++ sshguard; Grafana Alloy log shipping to `logs.memhamwan.net` → Loki — and,
+with it, journald `Storage=volatile` (the log agent reads `/run/log/journal`).
 
 ## Notes for the reviewer
 

@@ -1,0 +1,5 @@
+# Managed by the netops linux_baseline role — do not edit on the host.
+# Listen on the network-wide convention port alongside 22. Once an explicit
+# Port is set, sshd stops defaulting to 22, so both are listed.
+Port 22
+Port {{ linux_baseline_ssh_port }}

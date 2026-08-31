@@ -1,6 +1,6 @@
 # Managed by the netops linux_baseline role — do not edit on the host.
 # Key-only, internet-facing hardening. These boxes sit on publicly-routed
-# 44net, so password auth is off and only members of the sshusers group get in.
+# 44net, so password auth is off and only members of the login-gate group get in.
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -8,7 +8,7 @@ AuthenticationMethods publickey
 PubkeyAuthentication yes
 MaxAuthTries 3
 LoginGraceTime 20
-AllowGroups sshusers
+AllowGroups {{ linux_baseline_ssh_group }}
 X11Forwarding no
 AllowAgentForwarding no
 AllowTcpForwarding no

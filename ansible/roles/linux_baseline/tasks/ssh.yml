@@ -1,7 +1,9 @@
 ---
+# Templated (not static): the port and login-gate group come from role vars,
+# so an inventory override actually takes effect in sshd's config.
 - name: Install sshd drop-ins (ports + key-only hardening)
-  ansible.builtin.copy:
-    src: "ssh/{{ item }}"
+  ansible.builtin.template:
+    src: "ssh/{{ item }}.j2"
     dest: "/etc/ssh/sshd_config.d/{{ item }}"
     mode: "0644"
   loop:

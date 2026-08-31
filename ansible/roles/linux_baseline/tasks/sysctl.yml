@@ -3,12 +3,16 @@
 # anycast/OSPF asymmetric return traffic. We OWN rp_filter here (loose=2) and
 # assert no other drop-in re-asserts strict — effective mode is max(all,iface),
 # so a stray `1` anywhere would override us.
-- name: No conflicting strict rp_filter drop-in exists
+# Scan EVERY directory `sysctl --system` loads, not just /etc — a strict
+# rp_filter=1 in /usr/lib/sysctl.d (etc.) would otherwise escape the guard.
+- name: No conflicting strict rp_filter=1 in any sysctl load path
   ansible.builtin.shell: |
     set -o pipefail
-    ! grep -RhsE '^\s*net\.ipv4\.conf\.[^.]+\.rp_filter\s*=\s*1' \
-      /etc/sysctl.conf /etc/sysctl.d/ 2>/dev/null \
-      | grep -qv '50-netops-baseline'
+    hits=$(grep -RhsE '^[[:space:]]*net\.ipv4\.conf\.[^.]+\.rp_filter[[:space:]]*=[[:space:]]*1' \
+      /etc/sysctl.conf /run/sysctl.d /etc/sysctl.d \
+      /usr/local/lib/sysctl.d /usr/lib/sysctl.d /lib/sysctl.d 2>/dev/null \
+      | grep -v '50-netops-baseline' || true)
+    [ -z "$hits" ]
   args:
     executable: /bin/bash
   register: linux_baseline_rpf_conflict
