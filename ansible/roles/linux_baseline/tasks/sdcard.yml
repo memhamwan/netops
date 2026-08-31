@@ -1,0 +1,25 @@
+---
+# Only reached when linux_baseline_is_sdcard is true. journald is the single
+# biggest continuous SD writer; moving it to RAM is most of the win. Logs are
+# shipped off-box to Loki (P2), so losing the local journal on reboot is fine.
+- name: journald conf.d dir
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: journald to volatile (RAM), no rsyslog forward
+  ansible.builtin.template:
+    src: journald-sdcard.conf.j2
+    dest: /etc/systemd/journald.conf.d/10-sdcard.conf
+    mode: "0644"
+  notify: restart journald
+
+# Random swap-to-SD is the worst wear pattern; these hosts have no memory
+# pressure, so drop the Pi's default swapfile if it exists.
+- name: Disable swap-to-SD (dphys-swapfile) if present
+  ansible.builtin.systemd:
+    name: dphys-swapfile
+    enabled: false
+    state: stopped
+  failed_when: false

@@ -1,0 +1,10 @@
+# Managed by the netops linux_baseline role — do not edit on the host.
+# SD-card host: journal in RAM (/run/log/journal), wiped on reboot — the
+# durable copy lives in Loki via off-box shipping. RuntimeMaxUse caps the RAM
+# ring; ForwardToSyslog=no stops a 2nd copy landing back on the card via rsyslog.
+[Journal]
+Storage=volatile
+RuntimeMaxUse={{ linux_baseline_journald_runtime_max }}
+RuntimeKeepFree=32M
+ForwardToSyslog=no
+ForwardToWall=no

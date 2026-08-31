@@ -1,0 +1,42 @@
+---
+# Order matters: users + keys BEFORE the ssh lockdown (so key-only auth can
+# never strand a host), sysctl before anything routing-adjacent.
+- name: Detect boot medium (SD/eMMC vs USB/NVMe) for write-wear tuning
+  ansible.builtin.shell: |
+    set -o pipefail
+    src=$(findmnt -no SOURCE /)
+    disk=$(lsblk -no PKNAME "$src" 2>/dev/null || basename "$src")
+    [ -n "$disk" ] && echo "$disk" || basename "$src"
+  args:
+    executable: /bin/bash
+  register: linux_baseline_root_disk
+  changed_when: false
+  check_mode: false
+
+- name: Record whether the rootfs is on an SD/eMMC card
+  ansible.builtin.set_fact:
+    linux_baseline_is_sdcard: "{{ linux_baseline_root_disk.stdout is match('^mmcblk') }}"
+
+- name: Operator + service users, keys
+  ansible.builtin.import_tasks: users.yml
+
+- name: SSH port + hardening (key-only)
+  ansible.builtin.import_tasks: ssh.yml
+
+- name: Kernel sysctl — anycast-safe loose rp_filter, redirects off, syncookies
+  ansible.builtin.import_tasks: sysctl.yml
+
+- name: SD-card write-wear reduction
+  ansible.builtin.import_tasks: sdcard.yml
+  when: linux_baseline_is_sdcard | bool and linux_baseline_sdcard_tuning | bool
+
+- name: Native node-exporter
+  ansible.builtin.import_tasks: node_exporter.yml
+  when: linux_baseline_manage_node_exporter | bool
+
+- name: DNS / NTP client (skipped where a service role owns them)
+  ansible.builtin.import_tasks: dns_ntp.yml
+
+- name: Unattended security upgrades
+  ansible.builtin.import_tasks: updates.yml
+  when: linux_baseline_unattended_upgrades | bool

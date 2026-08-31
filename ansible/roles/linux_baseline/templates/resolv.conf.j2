@@ -1,0 +1,5 @@
+# Managed by the netops linux_baseline role — do not edit on the host.
+search {{ linux_baseline_dns_search }}
+{% for s in linux_baseline_dns_servers %}
+nameserver {{ s }}
+{% endfor %}

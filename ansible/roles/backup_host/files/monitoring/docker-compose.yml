@@ -127,18 +127,6 @@ services:
       # (holds the API password); _mktxp.conf is installed alongside it
       - /var/lib/netops/mktxp:/etc/mktxp
 
-  node-exporter:
-    image: quay.io/prometheus/node-exporter:v1.12.1
-    container_name: node-exporter
-    restart: unless-stopped
-    network_mode: host
-    pid: host
-    command:
-      # docker-bridge only: containers scrape via host.docker.internal;
-      # not exposed on the HamWAN LAN
-      - --web.listen-address=172.17.0.1:9100
-      - --path.rootfs=/host
-      # backup/oxidized freshness metrics written by /opt/netops scripts
-      - --collector.textfile.directory=/host/var/lib/netops/node-exporter
-    volumes:
-      - /:/host:ro,rslave
+  # node-exporter runs NATIVELY now (linux_baseline role), no longer in this
+  # stack. It still binds 172.17.0.1:9100, so Prometheus keeps scraping it at
+  # host.docker.internal:9100 unchanged.

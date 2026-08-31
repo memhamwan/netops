@@ -1,0 +1,29 @@
+---
+# The rp_filter landmine: strict reverse-path filtering (=1) silently drops
+# anycast/OSPF asymmetric return traffic. We OWN rp_filter here (loose=2) and
+# assert no other drop-in re-asserts strict — effective mode is max(all,iface),
+# so a stray `1` anywhere would override us.
+- name: No conflicting strict rp_filter drop-in exists
+  ansible.builtin.shell: |
+    set -o pipefail
+    ! grep -RhsE '^\s*net\.ipv4\.conf\.[^.]+\.rp_filter\s*=\s*1' \
+      /etc/sysctl.conf /etc/sysctl.d/ 2>/dev/null \
+      | grep -qv '50-netops-baseline'
+  args:
+    executable: /bin/bash
+  register: linux_baseline_rpf_conflict
+  changed_when: false
+  failed_when: linux_baseline_rpf_conflict.rc != 0
+  check_mode: false
+
+- name: Install anycast-safe sysctl drop-in
+  ansible.builtin.copy:
+    src: sysctl/50-netops-baseline.conf
+    dest: /etc/sysctl.d/50-netops-baseline.conf
+    mode: "0644"
+  register: linux_baseline_sysctl_file
+
+- name: Apply sysctl
+  ansible.builtin.command: sysctl --system
+  when: linux_baseline_sysctl_file.changed
+  changed_when: linux_baseline_sysctl_file.changed

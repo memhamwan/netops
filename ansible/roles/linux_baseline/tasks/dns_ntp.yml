@@ -1,0 +1,27 @@
+---
+# DNS/NTP CLIENT config for ordinary hosts. On hosts that RUN these services
+# (site_services), both toggles are false — that role owns resolv.conf
+# (127.0.0.1) and the chrony server, and a baseline client would collide.
+# First pass: no ordinary Linux hosts exist yet, so this is inert today and
+# gets hardened when the first non-service host is onboarded.
+- name: Resolver → anycast DNS
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    mode: "0644"
+  when: linux_baseline_manage_resolver | bool
+
+- name: chrony (client) points at the anycast NTP addresses
+  when: linux_baseline_manage_ntp_client | bool
+  block:
+    - name: chrony package
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+
+    - name: chrony client config
+      ansible.builtin.template:
+        src: chrony-client.conf.j2
+        dest: /etc/chrony/conf.d/10-netops-client.conf
+        mode: "0644"
+      notify: restart chrony

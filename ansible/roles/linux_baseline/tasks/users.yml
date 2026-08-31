@@ -1,0 +1,45 @@
+---
+# Runs BEFORE ssh.yml so key-only auth + AllowGroups can never strand a host.
+- name: Login-gate group present
+  ansible.builtin.group:
+    name: "{{ linux_baseline_ssh_group }}"
+    system: true
+
+- name: Operator accounts (shell, sudo + ssh group, password login locked)
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: "{{ [linux_baseline_ssh_group, 'sudo'] }}"
+    append: true
+    shell: /bin/bash
+    create_home: true
+    password_lock: true          # key-only; no usable password
+  loop: "{{ linux_baseline_operators }}"
+
+# Additive (not exclusive): a baseline run must not remove an operator's live
+# interactive key if it isn't among the committed ones. Every committed
+# <operator>_*.pub (ed25519 + rsa) is installed.
+- name: Install operator authorized keys
+  ansible.posix.authorized_key:
+    user: "{{ item }}"
+    key: "{% for f in query('fileglob', linux_baseline_operator_keys_dir ~ '/' ~ item ~ '_*.pub') | sort %}{{ lookup('file', f) }}\n{% endfor %}"
+  loop: "{{ linux_baseline_operators }}"
+
+- name: Check which imaging leftover accounts exist
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item }}"
+  loop: "{{ linux_baseline_lock_accounts }}"
+  register: linux_baseline_imaging_accounts
+  failed_when: false
+  changed_when: false
+
+# Lock password login on the default pi/meshtastic accounts if present. Only
+# the password is locked — the account (and any service running as it) stays.
+- name: Lock password login on leftover imaging accounts
+  ansible.builtin.user:
+    name: "{{ item.item }}"
+    password_lock: true
+  loop: "{{ linux_baseline_imaging_accounts.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (item.failed | default(false))

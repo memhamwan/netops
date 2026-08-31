@@ -1,0 +1,12 @@
+---
+# Standalone base role — no dependencies of its own. backup_host and
+# site_services depend on THIS role (their meta/main.yml), so it runs first.
+galaxy_info:
+  role_name: linux_baseline
+  description: >-
+    Base config for MemHamWAN Linux hosts (ssh + hardening, users,
+    node-exporter, SD-card write reduction, anycast-safe sysctl, DNS/NTP
+    client). The Linux counterpart to routeros_baseline.
+  license: MIT
+  min_ansible_version: "2.15"
+dependencies: []

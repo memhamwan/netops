@@ -1,0 +1,6 @@
+---
+# Runs linux_baseline first; site_services then owns resolv.conf (127.0.0.1)
+# and the chrony server, which is why the baseline DNS/NTP client yields on
+# service hosts (toggles set in the inventory service_hosts group vars).
+dependencies:
+  - role: linux_baseline

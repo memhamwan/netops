@@ -3,12 +3,9 @@
 # retired deploy.sh. Secrets come from sops (loaded by the playbook);
 # fleet-derived files (router.db, ICMP targets, mktxp.conf) are templated
 # from the inventory at deploy time — the inventory is the only fleet list.
-- name: SSH on port 222 (network-wide convention) alongside 22
-  ansible.builtin.copy:
-    src: ssh/10-netops-ports.conf
-    dest: /etc/ssh/sshd_config.d/10-netops-ports.conf
-    mode: "0644"
-  notify: restart sshd
+# SSH :222 + hardening, operator users, native node-exporter, sysctl, and
+# SD-card tuning now come from the linux_baseline role (this role depends on it
+# — see meta/main.yml), so they are no longer here.
 
 # docker and sops are deliberately NOT installed here (install method is a
 # host-bootstrap decision — see README); everything apt-safe is
