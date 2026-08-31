@@ -34,6 +34,11 @@
             if [ -w "$d$k" ]; then echo 0 > "$d$k"; fi
           done
         done
+        for d in /proc/sys/net/ipv6/conf/*/; do
+          for k in accept_redirects accept_source_route accept_ra; do
+            if [ -w "$d$k" ]; then echo 0 > "$d$k"; fi
+          done
+        done
       args:
         executable: /bin/bash
       changed_when: false

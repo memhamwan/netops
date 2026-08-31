@@ -38,10 +38,13 @@
         - 20-hardening.conf
       notify: reload ssh
 
+    # Skipped in check mode: the template task above only simulates its writes
+    # there, so validating the on-disk config would validate the OLD files and
+    # could report a misleading pass. (CI validates the rendered drop-ins via
+    # ci_render.yml instead.)
     - name: Validate sshd config
       ansible.builtin.command: sshd -t
       changed_when: false
-      check_mode: false
   rescue:
     - name: Restore the previous drop-in (or remove it if it was newly added)
       ansible.builtin.shell: |

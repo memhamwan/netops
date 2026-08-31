@@ -32,7 +32,10 @@
     # Idempotent: the regex won't match an already-commented line.
     - name: Use only the anycast NTP servers (comment the distro pool + DHCP)
       ansible.builtin.replace:
+        # [ \t], not \s — under replace's multiline matching \s also matches
+        # newlines, so a blank line before a directive would swallow the newline
+        # and comment only the blank line, leaving the directive active.
         path: /etc/chrony/chrony.conf
-        regexp: '^(\s*(?:pool|server)\s+\S*\.pool\.ntp\.org\b.*|\s*sourcedir\s+/run/chrony-dhcp\b.*)$'
+        regexp: '^([ \t]*(?:pool|server)[ \t]+\S*\.pool\.ntp\.org\b.*|[ \t]*sourcedir[ \t]+/run/chrony-dhcp\b.*)$'
         replace: '# \g<0>'
       notify: restart chrony

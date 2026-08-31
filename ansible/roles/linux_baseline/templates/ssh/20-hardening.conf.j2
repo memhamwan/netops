@@ -11,7 +11,10 @@ LoginGraceTime 20
 AllowGroups {{ linux_baseline_ssh_group }}
 X11Forwarding no
 AllowAgentForwarding no
-AllowTcpForwarding no
+# `local`, not `no`: the documented oxidized-web access path is an `ssh -L`
+# local forward to port 8888 on rpi.sco (see README). Local forwarding stays;
+# remote (-R) forwarding — using the host as a pivot — is still disallowed.
+AllowTcpForwarding local
 PermitTunnel no
 ClientAliveInterval 300
 ClientAliveCountMax 2
