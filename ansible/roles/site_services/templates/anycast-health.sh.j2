@@ -160,6 +160,26 @@ for _ip in $NTP_IPS; do
   echo "netops_anycast_announced{service=\"ntp\",ip=\"$_ip\"} $announced" >> "$tmp"
   echo "netops_anycast_since{service=\"ntp\",ip=\"$_ip\"} $announced_since" >> "$STATE_DIR/since.tmp"
 done
+
+# Reconcile the interface against the FULL desired set. The loops above only
+# visit addresses still in anycast_services; one removed or renumbered out of
+# that list (while anycast stays enabled) is never revisited, so its old /32
+# would linger on the interface — still announced into OSPF but invisible to
+# every metric. The unit file is unchanged in that case, so the restart handler
+# does not catch it either. Delete any /32 present that we no longer manage.
+if [ "$ANYCAST_ENABLED" -eq 1 ]; then
+  _desired="$DNS_IPS $NTP_IPS"
+  ip -4 -o addr show dev "$ANYCAST_IF" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 |
+  while read -r _have; do
+    _managed=0
+    for _want in $_desired; do
+      [ "$_have" = "$_want" ] && _managed=1
+    done
+    if [ "$_managed" -eq 0 ]; then
+      ip addr del "$_have/32" dev "$ANYCAST_IF" 2>/dev/null || true
+    fi
+  done
+fi
 {
   echo "# HELP netops_anycast_since Unix time of the last announce/withdraw transition."
   echo "# TYPE netops_anycast_since gauge"
@@ -177,15 +197,26 @@ rm -f "$STATE_DIR/since.tmp"
   echo "# TYPE netops_anycast_origin_known gauge"
 } >> "$tmp"
 for _ip in $DNS_IPS; do
-  origin=$($DIG @"$_ip" CH TXT hostname.bind 2>/dev/null | tr -d '"' | head -1 || true)
   known=0
-  [ -z "$origin" ] && origin=unreachable
-  for _k in $KNOWN_ORIGINS; do
-    [ "$origin" = "$_k" ] && known=1
-  done
-  # Unreachable is a routing/health problem the other alerts already cover;
-  # don't also raise the split-brain alert for it.
-  [ "$origin" = "unreachable" ] && known=1
+  # Reachability and identity are different questions, and an empty answer must
+  # not conflate them. The identity query runs as the `if` condition so we read
+  # dig's OWN exit status (a pipe would hand us head's instead): ISC dig exits
+  # non-zero when no server replied, and 0 when it got a response of any rcode.
+  #   • no reply at all → unreachable; the routing/health alerts already cover
+  #     it, so it is NOT a split brain (known=1).
+  #   • a reply with no identity (REFUSED/NXDOMAIN, or a resolver hiding its
+  #     hostname.bind) → a REACHABLE unknown responder: exactly the legacy-LEB-
+  #     came-back case this detector exists for, so known stays 0.
+  if _raw=$($DIG @"$_ip" CH TXT hostname.bind 2>/dev/null); then
+    origin=$(printf '%s' "$_raw" | tr -d '"' | head -1)
+    [ -z "$origin" ] && origin=no-identity
+    for _k in $KNOWN_ORIGINS; do
+      [ "$origin" = "$_k" ] && known=1
+    done
+  else
+    origin=unreachable
+    known=1
+  fi
   # $origin is attacker-controlled — it is whatever answers the anycast
   # address, i.e. exactly the responder this check exists to distrust. Escape
   # it for the Prometheus exposition format before it becomes a label value: a

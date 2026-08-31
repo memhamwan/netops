@@ -45,6 +45,11 @@ groups:
       # The client's-eye check: the anycast address is unreachable or wrong
       # even though an instance is healthy → a routing problem, not a service
       # problem (announcement withdrawn, adjacency down, filter dropping it).
+      # CAVEAT (single-host M2): the prober on rpi.sco owns the /32 locally, so
+      # the anycast probe resolves without traversing OSPF and this cannot see
+      # an FRR/adjacency/route failure — it only becomes a real routing backstop
+      # from a non-announcing vantage (M3 reciprocal probes) or the deferred
+      # route census. Kept now so the wiring exists; do not over-trust it at M2.
       # Gated on at least one host actually announcing (netops_anycast_enabled
       # == 1): in M1 the anycast address is scraped but deliberately never
       # announced, so without this guard every healthy unicast instance would
