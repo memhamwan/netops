@@ -4,7 +4,7 @@
 # Snapshot BEFORE the install/validate block, so a REAL snapshot failure (e.g. a
 # full disk) aborts here — never inside the block, where the rescue would then
 # delete an original it couldn't back up. rpi.sco already carries a known-good
-# 10-netops-ports.conf from the old backup_host task; rollback must preserve it
+# 10-netops-ports.conf from the old backup_host task (now netops_host); rollback must preserve it
 # (the :222 port Ansible reconnects on).
 - name: Stat existing sshd drop-ins
   ansible.builtin.stat:

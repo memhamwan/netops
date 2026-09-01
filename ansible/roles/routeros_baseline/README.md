@@ -31,7 +31,7 @@ runs over the RouterOS API (`api_modify`) and only corrects what exists:
 2. **api-ssl migration (implemented in these drafts; manual, ordered run):**
    1. `onboard_device.yml` fleet-wide — creates the per-device self-signed
       cert and enables api-ssl (8729) *alongside* plaintext 8728.
-   2. Flip `mktxp_use_ssl: true` in `roles/backup_host/defaults/main.yml`
+   2. Flip `mktxp_use_ssl: true` in `roles/netops_host/defaults/main.yml`
       and redeploy the backup host — the collector moves to 8729.
    3. `routeros_baseline.yml` — runs over 8729 and its final `api_lockdown`
       disables plaintext 8728 and pins api-ssl to `api_allowed_sources`.

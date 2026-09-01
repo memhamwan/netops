@@ -2,7 +2,7 @@
 
 Base config every MemHamWAN **Linux** host wants — the counterpart to
 `routeros_baseline`. Pulled in automatically as a dependency (`meta/main.yml`)
-by `backup_host` and `site_services`, so it always runs first.
+by `netops_host` and `site_services`, so it always runs first.
 
 ## Scope
 
@@ -43,7 +43,7 @@ with it, journald `Storage=volatile` (the log agent reads `/run/log/journal`).
   Prometheus keeps scraping `host.docker.internal:9100` unchanged. On first
   apply the native exporter and the still-running docker one briefly contend for
   `:9100`; the `Restart=on-failure` override lets native bind once
-  `backup_host` removes the docker service later in the same run. Deploy with
+  `netops_host` removes the docker service later in the same run. Deploy with
   `--check --diff` first.
 - **`:9100` exposure:** on hosts scraped remotely (meshtastic.hil) the exporter binds
   the LAN IP and is not yet firewalled — that gap closes with the P2 firewall.

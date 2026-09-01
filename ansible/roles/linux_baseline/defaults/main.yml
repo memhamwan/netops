@@ -1,6 +1,6 @@
 ---
 # linux_baseline — base config every MemHamWAN Linux host wants, the Linux
-# counterpart to routeros_baseline. Pulled in as a dependency by backup_host
+# counterpart to routeros_baseline. Pulled in as a dependency by netops_host
 # and site_services (meta/main.yml), so it always runs first.
 #
 # P1 scope (this role today): ssh + hardening, operator/ansible users, native
@@ -38,7 +38,7 @@ linux_baseline_manage_node_exporter: true
 # to the docker-bridge gateway so the exporter stays off the public LAN.
 linux_baseline_node_exporter_listen: "{{ ip | default(ansible_host | default(inventory_hostname)) }}:9100"
 # Textfile collector dir — shared by the site_services health script and the
-# backup_host oxidized-freshness metrics, so it stays a real path (not tmpfs)
+# netops_host oxidized-freshness metrics, so it stays a real path (not tmpfs)
 # for now; the SD-tuning below covers the bigger write sources.
 linux_baseline_textfile_dir: /var/lib/netops/node-exporter
 

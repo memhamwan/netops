@@ -1,4 +1,4 @@
 ---
-# Standalone base role — no dependencies of its own. backup_host and
+# Standalone base role — no dependencies of its own. netops_host and
 # site_services depend on THIS role (their meta/main.yml), so it runs first.
 dependencies: []
