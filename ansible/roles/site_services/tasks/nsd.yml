@@ -1,7 +1,9 @@
 ---
 # Authoritative DNS (NSD). Mirrors the anycast gate: entirely inert while
-# nsd_enabled is false (NSD is not installed; unbound keeps serving the
-# internal zone from local-data exactly as before). When enabled, NSD serves
+# nsd_enabled is false — NSD is stopped and disabled if present (the package
+# and config are left in place, like the anycast teardown leaves frr), and
+# unbound keeps serving the internal zone from local-data as before. When
+# enabled, NSD serves
 # the inventory-rendered zone authoritatively on the authdns anycast /32s +
 # 127.0.0.1@{{ nsd_stub_port }}, and unbound resolves the internal zone via a
 # stub-zone to it (see unbound.yml). See docs/dns-authority-design.md.

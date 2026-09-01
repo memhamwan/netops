@@ -50,9 +50,11 @@ anycast_services:
   - {name: authdns-secondary, service: authdns, ip: 44.34.133.53}
 
 # ── Authoritative DNS (NSD) ────────────────────────────────────────────────
-# MASTER SWITCH, mirrors anycast_enabled. false (default) = NSD is not
-# installed and unbound serves the internal zone from local-data exactly as
-# today — merging this changes nothing on a live host. true = NSD serves the
+# MASTER SWITCH, mirrors anycast_enabled. false (default) = NSD does not run
+# (never installed on a fresh host; stopped and disabled — package and config
+# left in place — on one that had it on, matching the anycast teardown), and
+# unbound serves the internal zone from local-data exactly as today — merging
+# this changes nothing on a live host. true = NSD serves the
 # inventory-rendered zone authoritatively on the authdns anycast /32s +
 # 127.0.0.1@{{ nsd_stub_port }}, and unbound resolves the internal zone via a
 # stub-zone to it (dropping local-data).
