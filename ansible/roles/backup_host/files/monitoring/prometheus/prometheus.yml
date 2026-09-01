@@ -29,7 +29,7 @@ scrape_configs:
       - targets: [44.34.128.108:9100]
         labels:
           site: hil
-          host: rpi.hil
+          host: meshtastic.hil
 
   # RouterOS API metrics for the whole fleet via mktxp (one endpoint)
   - job_name: mktxp
