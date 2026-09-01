@@ -8,9 +8,15 @@ server:
     # that address, so anycast stays correct without interface-automatic.
     # ip-transparent lets unbound bind the recursive anycast /32s before the
     # health script has placed them on {{ anycast_interface }}.
+    #
+    # `ip` (the inventory address), NOT `ip | default(ansible_host)`: with
+    # gather_facts off and FQDN inventory names, ansible_host is the FQDN, so
+    # the fallback would render `interface: <hostname>` — valid to templating
+    # but impossible to bind at runtime. A bare `ip` fails the render loudly if
+    # it is missing; nsd.yml also asserts it before this ever deploys.
     ip-transparent: yes
     interface: 127.0.0.1
-    interface: {{ ip | default(ansible_host) }}
+    interface: {{ ip }}
 {% for svc in anycast_services | selectattr('service', 'eq', 'dns') %}
     interface: {{ svc.ip }}
 {% endfor %}
