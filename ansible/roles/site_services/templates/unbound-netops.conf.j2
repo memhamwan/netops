@@ -100,7 +100,15 @@ server:
     private-address: 192.168.0.0/16
     # ...but 44/8 is public space we serve locally, so it is NOT listed here.
 
+{% if nsd_enabled | bool %}
+    # NSD mode: the stub-zone target IS the local NSD on 127.0.0.1@{{ nsd_stub_port }},
+    # so unbound MUST be allowed to query localhost — the default `yes` would
+    # silently SERVFAIL every internal name. (Off, it stays `yes`: nothing on
+    # this host should ever be an upstream for recursion.)
+    do-not-query-localhost: no
+{% else %}
     do-not-query-localhost: yes
+{% endif %}
     logfile: ""
     use-syslog: yes
     log-servfail: yes

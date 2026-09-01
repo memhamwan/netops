@@ -27,13 +27,23 @@
     path: /etc/NetworkManager
   register: nm_dir
 
-# Before unbound: when NSD is enabled, unbound's stub-zone resolves the
-# internal zone through NSD's loopback listener, so NSD must already be up.
-- name: Configure authoritative DNS (NSD)
-  ansible.builtin.import_tasks: nsd.yml
-
 - name: Configure unbound
   ansible.builtin.import_tasks: unbound.yml
+
+# unbound MUST release its :53 wildcard before NSD starts. In NSD mode unbound
+# switches to explicit binds that exclude the authdns IPs; until that restart
+# actually happens the running unbound still owns 0.0.0.0:53, and NSD cannot
+# bind 44.34.132.53/.133.53 (address in use). Flush the unbound restart here so
+# nsd.yml starts NSD onto a freed socket. (The cost is a sub-second window where
+# unbound's stub-zone points at an NSD that isn't up yet — internal names
+# SERVFAIL until the next task starts it — acceptable on a deliberate enable.)
+- name: Release unbound's :53 wildcard before starting NSD
+  ansible.builtin.meta: flush_handlers
+
+# After unbound has freed the wildcard: install (without auto-start), render,
+# validate, and only then start NSD.
+- name: Configure authoritative DNS (NSD)
+  ansible.builtin.import_tasks: nsd.yml
 
 - name: Configure chrony
   ansible.builtin.import_tasks: chrony.yml

@@ -72,6 +72,18 @@ or a broken public delegation. The zone is rendered from the inventory
 identically onto every host (no AXFR); `ip-transparent` lets both daemons bind
 the anycast /32s before the health script places them on `anycast0`.
 
+First-enable ordering matters and the role handles it: the NSD package is
+installed **without auto-starting** (its stock config would grab `:53` and
+collide with unbound), unbound is reconfigured and **restarted first** to free
+the wildcard socket (a `flush_handlers` in `tasks/main.yml`), and only then is
+NSD started onto the now-free authdns addresses. There is a sub-second window
+during that hand-off where unbound's stub points at an NSD that isn't up yet, so
+internal names briefly SERVFAIL — acceptable on a deliberate, gated enable. NSD
+also needs `do-not-query-localhost: no` on unbound in this mode (the default
+`yes` would block the stub target and SERVFAIL the whole internal zone), and the
+rendered zonefiles are `nsd-checkzone`-validated (not just `nsd-checkconf`,
+which never parses them) before the restart handler can fire.
+
 ## Before anycast can be enabled
 
 1. **`site_lan_interface`** must be set for the host in the inventory

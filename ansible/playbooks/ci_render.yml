@@ -163,6 +163,8 @@
           - "'ip-ratelimit:' in acl"
           - "'access-control: 44.34.128.0/21 allow' in acl"
           - "'access-control: 44.0.0.0/8 allow' not in acl"
+          # NSD off: nothing on this host is an upstream, so localhost stays off
+          - "'do-not-query-localhost: yes' in acl"
         quiet: true
       vars:
         acl: "{{ lookup('file', render_dir ~ '/unbound-netops.conf') }}"
@@ -262,6 +264,9 @@
           - "'interface-automatic: yes' not in ubnsd"
           # on-net recursion of the internal zone goes to the local NSD
           - "'stub-addr: 127.0.0.1@5353' in stub"
+          # and unbound must be ALLOWED to query that localhost target, or the
+          # stub silently SERVFAILs the whole internal zone
+          - "'do-not-query-localhost: no' in ubnsd"
         quiet: true
       vars:
         nsdconf: "{{ lookup('file', render_dir ~ '/nsd.conf') }}"

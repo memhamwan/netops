@@ -46,12 +46,17 @@
           binds it explicitly in NSD mode and cannot bind a hostname.
         quiet: true
 
-    - name: NSD package
+    # policy_rc_d 101 blocks the package's auto-start: the stock nsd.conf listens
+    # on all interfaces, so a postinst start would try to grab :53 and collide
+    # with unbound (still bound to the recursive anycast IPs). NSD is started
+    # explicitly at the end of this file, once its restricted config is in place.
+    - name: NSD package (do not auto-start on install)
       ansible.builtin.apt:
         name: nsd
         state: present
         update_cache: true
         cache_valid_time: 3600
+        policy_rc_d: 101
 
     - name: Zones directory
       ansible.builtin.file:
@@ -90,12 +95,19 @@
         reverse_zone: "{{ item }}"
       notify: restart nsd
 
-    # Validate the FULL config (main nsd.conf includes conf.d + reads the
-    # zonefiles), after they are on disk. A bad render fails the play here,
-    # before the restart handler ever fires.
-    - name: Validate the NSD configuration and zones
+    # nsd-checkconf validates only the server config — it does NOT parse the
+    # zonefiles, so a malformed zone would sail through here and then wedge NSD
+    # on restart. Check the config, then check every zonefile explicitly.
+    - name: Validate the NSD server configuration
       ansible.builtin.command: nsd-checkconf /etc/nsd/nsd.conf
       changed_when: false
+
+    # Every zone renders to /etc/nsd/zones/<zone>.zone (forward + each reverse),
+    # so the file path follows from the name.
+    - name: Validate every rendered zonefile
+      ansible.builtin.command: "nsd-checkzone {{ item }} /etc/nsd/zones/{{ item }}.zone"
+      changed_when: false
+      loop: "{{ [dns_zone] + dns_reverse_zones }}"
 
     - name: Enable NSD
       ansible.builtin.systemd:
