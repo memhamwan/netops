@@ -16,7 +16,6 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 TEXTFILE_DIR="{{ site_services_textfile_dir }}"
 STATE_DIR="{{ site_services_var }}"
 ANYCAST_ENABLED={{ 1 if anycast_enabled | bool else 0 }}
-NSD_ENABLED={{ 1 if nsd_enabled | bool else 0 }}
 ANYCAST_IF="{{ anycast_interface }}"
 # The authoritative zone data lives in unbound's local-data when NSD is off,
 # and in NSD's rendered zonefile when NSD is on — checksum whichever is the
@@ -33,7 +32,9 @@ RECURSION_PROBE_NAME="{{ dns_recursion_probe_name }}"
 
 DNS_IPS="{{ anycast_services | selectattr('service', 'eq', 'dns') | map(attribute='ip') | join(' ') }}"
 NTP_IPS="{{ anycast_services | selectattr('service', 'eq', 'ntp') | map(attribute='ip') | join(' ') }}"
+{% if nsd_enabled | bool %}
 AUTHDNS_IPS="{{ anycast_services | selectattr('service', 'eq', 'authdns') | map(attribute='ip') | join(' ') }}"
+{% endif %}
 # Short names of every enrolled service host. An anycast answer from anything
 # else is the split-brain signal (e.g. the legacy LEB hosts coming back).
 KNOWN_ORIGINS="{% for h in groups['service_hosts'] | sort %}{{ h | replace('.' ~ dns_zone, '') }} {% endfor %}"
@@ -61,8 +62,8 @@ fi
 # on its loopback listener — the same path unbound's stub-zone uses — so it is
 # independent of whether the authdns anycast /32 is on the interface yet. This
 # gates the authdns /32s: NSD down → address withdrawn.
-authdns_healthy=0
 {% if nsd_enabled | bool %}
+authdns_healthy=0
 if [ -n "$($DIG @127.0.0.1 -p {{ nsd_stub_port }} SOA {{ dns_zone }} 2>/dev/null | head -1 || true)" ]; then
   authdns_healthy=1
 fi

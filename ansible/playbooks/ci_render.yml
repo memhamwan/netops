@@ -271,7 +271,6 @@
     - name: In NSD mode the health script gates and announces the authdns /32s
       ansible.builtin.assert:
         that:
-          - "'NSD_ENABLED=1' in hs"
           - "'ZONE_FILE=/etc/nsd/zones/memhamwan.net.zone' in hs"
           - "'AUTHDNS_IPS=\"44.34.132.53 44.34.133.53\"' in hs"
           # health-gated exactly like dns/ntp, and folded into the reconcile set
