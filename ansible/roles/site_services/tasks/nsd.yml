@@ -1,0 +1,85 @@
+---
+# Authoritative DNS (NSD). Mirrors the anycast gate: entirely inert while
+# nsd_enabled is false (NSD is not installed; unbound keeps serving the
+# internal zone from local-data exactly as before). When enabled, NSD serves
+# the inventory-rendered zone authoritatively on the authdns anycast /32s +
+# 127.0.0.1@{{ nsd_stub_port }}, and unbound resolves the internal zone via a
+# stub-zone to it (see unbound.yml). See docs/dns-authority-design.md.
+
+- name: NSD disabled — authoritative DNS stays off
+  when: not (nsd_enabled | bool)
+  block:
+    # Reconcile path back from a prior enabled deploy: a running NSD would keep
+    # answering on the authdns /32s while unbound has reverted to local-data.
+    - name: Is NSD installed?
+      ansible.builtin.stat:
+        path: /lib/systemd/system/nsd.service
+      register: nsd_unit
+
+    - name: Stop and disable NSD
+      ansible.builtin.systemd:
+        name: nsd
+        state: stopped
+        enabled: false
+      when: nsd_unit.stat.exists
+
+- name: NSD enabled
+  when: nsd_enabled | bool
+  block:
+    - name: NSD package
+      ansible.builtin.apt:
+        name: nsd
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Zones directory
+      ansible.builtin.file:
+        path: /etc/nsd/zones
+        state: directory
+        owner: root
+        group: nsd
+        mode: "0750"
+
+    - name: Install NSD server config
+      ansible.builtin.template:
+        src: nsd.conf.j2
+        dest: /etc/nsd/nsd.conf.d/netops.conf
+        mode: "0644"
+      notify: restart nsd
+
+    - name: Render the forward zone
+      ansible.builtin.template:
+        src: nsd-zone-forward.j2
+        dest: "/etc/nsd/zones/{{ dns_zone }}.zone"
+        owner: root
+        group: nsd
+        mode: "0640"
+      notify: restart nsd
+
+    # reverse_zone drives the $ORIGIN and the /24 the PTRs are filtered to.
+    - name: Render the reverse zones
+      ansible.builtin.template:
+        src: nsd-zone-reverse.j2
+        dest: "/etc/nsd/zones/{{ item }}.zone"
+        owner: root
+        group: nsd
+        mode: "0640"
+      loop: "{{ dns_reverse_zones }}"
+      vars:
+        reverse_zone: "{{ item }}"
+      notify: restart nsd
+
+    # Validate the FULL config (main nsd.conf includes conf.d + reads the
+    # zonefiles), after they are on disk. A bad render fails the play here,
+    # before the restart handler ever fires.
+    - name: Validate the NSD configuration and zones
+      ansible.builtin.command: nsd-checkconf /etc/nsd/nsd.conf
+      changed_when: false
+
+    - name: Enable NSD
+      ansible.builtin.systemd:
+        name: nsd
+        enabled: true
+        state: started
+        daemon_reload: true

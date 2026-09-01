@@ -27,6 +27,11 @@
     path: /etc/NetworkManager
   register: nm_dir
 
+# Before unbound: when NSD is enabled, unbound's stub-zone resolves the
+# internal zone through NSD's loopback listener, so NSD must already be up.
+- name: Configure authoritative DNS (NSD)
+  ansible.builtin.import_tasks: nsd.yml
+
 - name: Configure unbound
   ansible.builtin.import_tasks: unbound.yml
 

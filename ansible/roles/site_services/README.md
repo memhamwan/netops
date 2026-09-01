@@ -32,6 +32,46 @@ ansible-playbook playbooks/site_services.yml \
   -e anycast_enabled=true -e anycast_confirm=true
 ```
 
+## Third switch: authoritative NSD (`nsd_enabled`)
+
+A separate, independently-gated capability: serve `memhamwan.net` (and the
+reverse zones) **authoritatively** from NSD, co-located with unbound and chrony
+but separated **by address**. Design and cutover plan:
+[docs/dns-authority-design.md](../../../docs/dns-authority-design.md). This PR
+is the **serve-in-parallel** stage — NSD is live but **not delegated**; DNSSEC
+signing, the edge `:53` permit, and the registrar NS/glue/DS cutover are the
+next PR.
+
+| | `nsd_enabled: false` (default) | `nsd_enabled: true` |
+|---|---|---|
+| authoritative server | none — unbound answers the zone from `local-data` | NSD, on the `authdns` anycast /32s + `127.0.0.1@5353` |
+| unbound internal zone | `local-data` (rendered from inventory) | **stub-zone → local NSD** (`local-data` removed) |
+| unbound `:53` bind | `0.0.0.0` + `interface-automatic` | **explicit**: loopback, host IP, recursive anycast /32s only (never the `authdns` /32s) |
+| `authdns` /32s (`44.34.132.53`/`.133.53`) | in `anycast_services`, never placed on the interface | announced when NSD is healthy (health-gated like dns/ntp) |
+
+Enabling requires `-e nsd_confirm=true` **and record parity** — a stub-zone has
+no fall-through, so unbound becomes authoritative for the *whole* zone via NSD;
+any `memhamwan.net` name not in the rendered zone (grafana/prometheus/
+alertmanager + the ~77 Cloudflare-only records) NXDOMAINs on-net until it is
+added. See the design doc's D1 milestone.
+
+```sh
+# Authoritative NSD (after record parity + review). No sops needed yet —
+# DNSSEC keys arrive with the next PR.
+ansible-playbook playbooks/site_services.yml \
+  -e nsd_enabled=true -e nsd_confirm=true
+```
+
+Why co-located but separated by address: unbound and NSD both want `:53`, so
+NSD binds only the `authdns` anycast pair + a `127.0.0.1@5353` loopback
+listener, and unbound (in NSD mode) drops its `0.0.0.0` wildcard for explicit
+binds that exclude those IPs. The loopback listener is what unbound's
+stub-zone resolves the internal zone through — the split-brain safeguard: on-net
+recursion always gets the fleet's own authoritative answers, never a stale copy
+or a broken public delegation. The zone is rendered from the inventory
+identically onto every host (no AXFR); `ip-transparent` lets both daemons bind
+the anycast /32s before the health script places them on `anycast0`.
+
 ## Before anycast can be enabled
 
 1. **`site_lan_interface`** must be set for the host in the inventory

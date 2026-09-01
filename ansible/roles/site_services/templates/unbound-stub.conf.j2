@@ -1,0 +1,32 @@
+# RENDERED by the netops site_services role — do not edit on the host.
+# Installed only when NSD is enabled (nsd_enabled). It REPLACES the local-data
+# zone file: on-net recursion resolves the internal zone (and the reverse
+# zones) directly from THIS host's authoritative NSD on 127.0.0.1@{{ nsd_stub_port }},
+# never out to the internet root.
+#
+# Why this is the split-brain safeguard (see docs/dns-authority-design.md):
+#   • unbound always gets the fleet's own authoritative answers — never a
+#     stale legacy copy or a broken public delegation;
+#   • internal resolution keeps working even if the public delegation/edge is
+#     down;
+#   • NSD's zonefile becomes the single source of truth (local-data is gone).
+#
+# NOTE: a stub-zone is authoritative-style — there is NO fall-through to
+# recursion for names NSD does not have. Every memhamwan.net name on-net
+# clients expect (grafana/prometheus/alertmanager and the rest of the public
+# Cloudflare set) MUST be in the rendered zone before enabling, or it will
+# NXDOMAIN. That record parity is the prerequisite milestone (D1).
+server:
+    # A stub-zone only takes effect for names unbound treats as needing
+    # iteration; declare the zones nodefault so the packaged local zones (e.g.
+    # the reverse RFC1918 blocks) do not shadow ours.
+{% for zone in [dns_zone] + dns_reverse_zones %}
+    local-zone: "{{ zone }}." nodefault
+{% endfor %}
+
+{% for zone in [dns_zone] + dns_reverse_zones %}
+stub-zone:
+    name: "{{ zone }}"
+    stub-addr: 127.0.0.1@{{ nsd_stub_port }}
+    stub-prime: no
+{% endfor %}

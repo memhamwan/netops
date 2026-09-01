@@ -1,5 +1,21 @@
 # RENDERED by the netops site_services role — do not edit on the host.
 server:
+{% if nsd_enabled | bool %}
+    # NSD is enabled and owns :53 on the authdns anycast IPs (ns1/ns2). unbound
+    # must NOT wildcard-grab those, so it binds its OWN addresses explicitly —
+    # loopback, the host's own address, and the recursive anycast /32s — and
+    # NEVER the authdns /32s. A socket bound to a specific address replies from
+    # that address, so anycast stays correct without interface-automatic.
+    # ip-transparent lets unbound bind the recursive anycast /32s before the
+    # health script has placed them on {{ anycast_interface }}.
+    ip-transparent: yes
+    interface: 127.0.0.1
+    interface: {{ ip | default(ansible_host) }}
+{% for svc in anycast_services | selectattr('service', 'eq', 'dns') %}
+    interface: {{ svc.ip }}
+{% endfor %}
+    port: 53
+{% else %}
     # Anycast-safe listening: bind the wildcard and let unbound reply from the
     # address the query arrived on. Without interface-automatic, answers to a
     # query sent to an anycast address would be sourced from the host's own
@@ -7,6 +23,7 @@ server:
     interface: 0.0.0.0
     interface-automatic: yes
     port: 53
+{% endif %}
     do-ip4: yes
     do-ip6: no
     do-udp: yes
