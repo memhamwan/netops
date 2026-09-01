@@ -23,6 +23,14 @@
 - name: SSH port + hardening (key-only)
   ansible.builtin.import_tasks: ssh.yml
 
+# Reload sshd NOW, not at play end: if a later task fails (e.g. apt), a
+# play-end handler never fires, and the next run sees the drop-in unchanged so
+# never re-triggers it — leaving the daemon on the old config (no :222). Flushing
+# here applies the validated ssh change immediately, right after users/keys are
+# in place.
+- name: Apply the sshd change immediately (before later tasks can fail)
+  ansible.builtin.meta: flush_handlers
+
 - name: Kernel sysctl — anycast-safe loose rp_filter, redirects off, syncookies
   ansible.builtin.import_tasks: sysctl.yml
 
