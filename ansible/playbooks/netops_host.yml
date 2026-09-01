@@ -1,9 +1,9 @@
 ---
 # Deploy the backup/monitoring stack to rpi.sco.
-#   ansible-playbook playbooks/backup_host.yml
+#   ansible-playbook playbooks/netops_host.yml
 # (Not router config — outside the router-change review gate.)
 - name: Deploy netops stack to backup host
-  hosts: backup_hosts
+  hosts: netops_hosts
   become: true
   gather_facts: false
   pre_tasks:
@@ -13,4 +13,4 @@
       delegate_to: localhost
       become: false
   roles:
-    - backup_host
+    - netops_host

@@ -14,10 +14,10 @@
 # repo-root-relative path: that resolves to tests/prometheus/ansible/... and
 # loads no rules at all, which makes the whole suite pass vacuously.
 rule_files:
-  - ../../ansible/roles/backup_host/files/monitoring/prometheus/rules/site-services.yml
+  - ../../ansible/roles/netops_host/files/monitoring/prometheus/rules/site-services.yml
   # Also loaded so BlackboxScrapeFailed (the backstop the DNS count() guards
   # rely on) can be exercised against the blackbox-dns-* jobs.
-  - ../../ansible/roles/backup_host/files/monitoring/prometheus/rules/alerts.yml
+  - ../../ansible/roles/netops_host/files/monitoring/prometheus/rules/alerts.yml
 
 evaluation_interval: 1m
 

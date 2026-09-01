@@ -76,7 +76,7 @@ Loki, and people type passwords into the username field). Container images are
 pinned to production-verified versions — bump them deliberately.
 
 **Dashboards** are provisioned from
-`ansible/roles/backup_host/files/monitoring/grafana/dashboards/*.json`
+`ansible/roles/netops_host/files/monitoring/grafana/dashboards/*.json`
 (folder "MemHamWAN": Network Overview, Monitoring Host, Device Logs, and the
 community MikroTik/mktxp deep-dive). They are file-managed:
 edit the JSON here and redeploy — UI edits are not persisted. To author in the
@@ -140,7 +140,7 @@ cd .. && direnv allow
 Deploy/refresh the backup host (rpi.sco):
 
 ```sh
-cd ansible && ansible-playbook playbooks/backup_host.yml
+cd ansible && ansible-playbook playbooks/netops_host.yml
 ```
 
 (Requires sops access — see Secrets — and `rsync` on the workstation. Connects
@@ -173,7 +173,7 @@ the backup host to pick up the new fleet list.
 
 ```
 ansible/             inventory (source of truth), playbooks, roles
-  roles/backup_host/       deploys the whole rpi.sco stack (configs live here)
+  roles/netops_host/       deploys the whole rpi.sco stack (configs live here)
   roles/routeros_baseline/ DRAFT device baseline — never executed, see its README
   roles/site_services/     DRAFT DNS/NTP + anycast — never executed, see its README
 docs/                design docs (site services / anycast)
@@ -212,7 +212,7 @@ sudo git clone -b encrypted git@github.com:memhamwan/routeros-config-audit.git /
 # container runs as uid 30000 (user "oxidized")
 sudo chown -R 30000:30000 /var/lib/netops/oxidized /var/lib/netops/ssh
 
-# then from a workstation: cd ansible && ansible-playbook playbooks/backup_host.yml
+# then from a workstation: cd ansible && ansible-playbook playbooks/netops_host.yml
 ```
 
 oxidized-web (browse/search/diff per device) listens on loopback only:

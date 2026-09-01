@@ -33,7 +33,7 @@ jobs:
   validate-configs:
     runs-on: ubuntu-latest
     env:
-      PROM_DIR: ansible/roles/backup_host/files/monitoring/prometheus
+      PROM_DIR: ansible/roles/netops_host/files/monitoring/prometheus
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,19 +74,19 @@ jobs:
       - name: amtool check-config
         run: >
           docker run --rm
-          -v "$PWD/ansible/roles/backup_host/files/monitoring/alertmanager:/cfg:ro"
+          -v "$PWD/ansible/roles/netops_host/files/monitoring/alertmanager:/cfg:ro"
           --entrypoint amtool quay.io/prometheus/alertmanager:v0.34.0
           check-config /cfg/alertmanager.yml
       - name: blackbox config check
         run: >
           docker run --rm
-          -v "$PWD/ansible/roles/backup_host/files/monitoring/blackbox:/cfg:ro"
+          -v "$PWD/ansible/roles/netops_host/files/monitoring/blackbox:/cfg:ro"
           quay.io/prometheus/blackbox-exporter:v0.28.0
           --config.check --config.file=/cfg/blackbox.yml
       - name: loki config check
         run: >
           docker run --rm
-          -v "$PWD/ansible/roles/backup_host/files/monitoring/loki:/cfg:ro"
+          -v "$PWD/ansible/roles/netops_host/files/monitoring/loki:/cfg:ro"
           grafana/loki:3.7.7
           -config.file=/cfg/loki-config.yml -verify-config
       - name: alloy fmt (rendered config)
@@ -96,6 +96,6 @@ jobs:
           grafana/alloy:v1.19.2 fmt /cfg/config.alloy > /dev/null
       - name: dashboards are valid JSON
         run: |
-          for f in ansible/roles/backup_host/files/monitoring/grafana/dashboards/*.json; do
+          for f in ansible/roles/netops_host/files/monitoring/grafana/dashboards/*.json; do
             jq empty "$f"
           done

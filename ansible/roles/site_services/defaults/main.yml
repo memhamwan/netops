@@ -4,7 +4,7 @@
 
 site_services_var: /var/lib/netops/site-services
 # node-exporter's textfile collector directory. On rpi.sco this is the same
-# directory the backup/oxidized metrics use (created by the backup_host role);
+# directory the backup/oxidized metrics use (created by the netops_host role);
 # a service host that is not also the monitoring host needs its own
 # node-exporter pointed here.
 site_services_textfile_dir: /var/lib/netops/node-exporter
@@ -97,7 +97,7 @@ dns_ip_ratelimit: 100
 # in inventory/dns_extra_records.yml) rather than a device address, so a host
 # renumbering can never make this expectation stale and withdraw DNS. Kept in
 # sync with the `dns_internal` module in
-# roles/backup_host/files/monitoring/blackbox/blackbox.yml — change both.
+# roles/netops_host/files/monitoring/blackbox/blackbox.yml — change both.
 dns_probe_name: dns-probe.memhamwan.net
 dns_probe_expect: 192.0.2.53
 # Recursion probe (external name): reported, alerted at warning, never

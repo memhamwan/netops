@@ -227,7 +227,7 @@ records). This is a standing action item, not a blocker for deployment.
 ## Role sketch
 
 Role `ansible/roles/site_services/` + playbook `playbooks/site_services.yml`,
-shaped like `backup_host` (native config in `files/`/`templates/`, secrets
+shaped like `netops_host` (native config in `files/`/`templates/`, secrets
 from sops, handlers for reloads). See the
 [role README](../ansible/roles/site_services/README.md) for the runbook and
 reviewer notes.
@@ -280,7 +280,7 @@ the routers' `1`, so it can never win a DR election. Worth noting: r1.sco's
 `bridge` template — the Pi's own segment — *does* carry auth, unlike the HIL
 `vrrp1` template whose missing auth caused the flood.
 
-Monitoring changes land in the existing `backup_host` role (Prometheus
+Monitoring changes land in the existing `netops_host` role (Prometheus
 config, blackbox modules, alert rules, dashboards) plus textfile collectors
 in this role — full strategy in the next section.
 
