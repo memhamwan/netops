@@ -17,7 +17,14 @@ TEXTFILE_DIR="{{ site_services_textfile_dir }}"
 STATE_DIR="{{ site_services_var }}"
 ANYCAST_ENABLED={{ 1 if anycast_enabled | bool else 0 }}
 ANYCAST_IF="{{ anycast_interface }}"
+# The authoritative zone data lives in unbound's local-data when NSD is off,
+# and in NSD's rendered zonefile when NSD is on — checksum whichever is the
+# source of truth on this host.
+{% if nsd_enabled | bool %}
+ZONE_FILE=/etc/nsd/zones/{{ dns_zone }}.zone
+{% else %}
 ZONE_FILE=/etc/unbound/unbound.conf.d/netops-zone.conf
+{% endif %}
 
 DNS_PROBE_NAME="{{ dns_probe_name }}"
 DNS_PROBE_EXPECT="{{ dns_probe_expect }}"
@@ -25,6 +32,9 @@ RECURSION_PROBE_NAME="{{ dns_recursion_probe_name }}"
 
 DNS_IPS="{{ anycast_services | selectattr('service', 'eq', 'dns') | map(attribute='ip') | join(' ') }}"
 NTP_IPS="{{ anycast_services | selectattr('service', 'eq', 'ntp') | map(attribute='ip') | join(' ') }}"
+{% if nsd_enabled | bool %}
+AUTHDNS_IPS="{{ anycast_services | selectattr('service', 'eq', 'authdns') | map(attribute='ip') | join(' ') }}"
+{% endif %}
 # Short names of every enrolled service host. An anycast answer from anything
 # else is the split-brain signal (e.g. the legacy LEB hosts coming back).
 KNOWN_ORIGINS="{% for h in groups['service_hosts'] | sort %}{{ h | replace('.' ~ dns_zone, '') }} {% endfor %}"
@@ -47,6 +57,17 @@ recursion_healthy=0
 if [ -n "$($DIG @127.0.0.1 "$RECURSION_PROBE_NAME" A 2>/dev/null | head -1 || true)" ]; then
   recursion_healthy=1
 fi
+
+# Authoritative DNS (NSD). Only meaningful when enabled; probes the local NSD
+# on its loopback listener — the same path unbound's stub-zone uses — so it is
+# independent of whether the authdns anycast /32 is on the interface yet. This
+# gates the authdns /32s: NSD down → address withdrawn.
+{% if nsd_enabled | bool %}
+authdns_healthy=0
+if [ -n "$($DIG @127.0.0.1 -p {{ nsd_stub_port }} SOA {{ dns_zone }} 2>/dev/null | head -1 || true)" ]; then
+  authdns_healthy=1
+fi
+{% endif %}
 
 # chrony CSV (chronyc -c tracking) = 14 fields. Watch the count: the human
 # "Reference ID : <hex> (<name>)" line is TWO CSV fields, not one — chrony's
@@ -136,6 +157,9 @@ rm -f "$STATE_DIR/since.tmp"
   echo "# TYPE netops_service_healthy gauge"
   echo "netops_service_healthy{service=\"dns\"} $dns_healthy"
   echo "netops_service_healthy{service=\"ntp\"} $ntp_healthy"
+{% if nsd_enabled | bool %}
+  echo "netops_service_healthy{service=\"authdns\"} $authdns_healthy"
+{% endif %}
   echo "# HELP netops_dns_recursion_healthy External name resolvable (reported only — never withdraws an address)."
   echo "# TYPE netops_dns_recursion_healthy gauge"
   echo "netops_dns_recursion_healthy $recursion_healthy"
@@ -167,6 +191,13 @@ for _ip in $NTP_IPS; do
   echo "netops_anycast_announced{service=\"ntp\",ip=\"$_ip\"} $announced" >> "$tmp"
   echo "netops_anycast_since{service=\"ntp\",ip=\"$_ip\"} $announced_since" >> "$STATE_DIR/since.tmp"
 done
+{% if nsd_enabled | bool %}
+for _ip in $AUTHDNS_IPS; do
+  announce "$_ip" "$authdns_healthy"
+  echo "netops_anycast_announced{service=\"authdns\",ip=\"$_ip\"} $announced" >> "$tmp"
+  echo "netops_anycast_since{service=\"authdns\",ip=\"$_ip\"} $announced_since" >> "$STATE_DIR/since.tmp"
+done
+{% endif %}
 
 # Reconcile the interface against the FULL desired set. The loops above only
 # visit addresses still in anycast_services; one removed or renumbered out of
@@ -175,7 +206,7 @@ done
 # every metric. The unit file is unchanged in that case, so the restart handler
 # does not catch it either. Delete any /32 present that we no longer manage.
 if [ "$ANYCAST_ENABLED" -eq 1 ]; then
-  _desired="$DNS_IPS $NTP_IPS"
+  _desired="$DNS_IPS $NTP_IPS{% if nsd_enabled | bool %} $AUTHDNS_IPS{% endif %}"
   ip -4 -o addr show dev "$ANYCAST_IF" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 |
   while read -r _have; do
     _managed=0

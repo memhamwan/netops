@@ -40,6 +40,49 @@ anycast_services:
   - {name: ntp-primary, service: ntp, ip: 44.34.128.181}
   - {name: ntp-dhcp-primary, service: ntp, ip: 44.34.132.3}
   - {name: ntp-dhcp-secondary, service: ntp, ip: 44.34.133.3}
+  # Authoritative DNS (NSD), gated separately by nsd_enabled below. A second
+  # /32 pair on the .132/.133 service network, following the primary/secondary
+  # convention; .53 for :53. The health script only ever places these on the
+  # dummy interface when NSD is enabled AND healthy, so they are harmless while
+  # nsd_enabled is false (frr's prefix-list permits them, but nothing announces
+  # an address that is not on the interface).
+  - {name: authdns-primary, service: authdns, ip: 44.34.132.53}
+  - {name: authdns-secondary, service: authdns, ip: 44.34.133.53}
+
+# ── Authoritative DNS (NSD) ────────────────────────────────────────────────
+# MASTER SWITCH, mirrors anycast_enabled. false (default) = NSD does not run
+# (never installed on a fresh host; stopped and disabled — package and config
+# left in place — on one that had it on, matching the anycast teardown), and
+# unbound serves the internal zone from local-data exactly as today — merging
+# this changes nothing on a live host. true = NSD serves the
+# inventory-rendered zone authoritatively on the authdns anycast /32s +
+# 127.0.0.1@{{ nsd_stub_port }}, and unbound resolves the internal zone via a
+# stub-zone to it (dropping local-data).
+#
+# Enabling requires -e nsd_confirm=true (see the playbook) AND record parity:
+# a stub-zone has no fall-through, so unbound becomes authoritative for the
+# WHOLE zone via NSD — any memhamwan.net name not in the rendered zone
+# (grafana/prometheus/alertmanager + the ~77 Cloudflare-only records) will
+# NXDOMAIN on-net until it is added. See docs/dns-authority-design.md (D1).
+nsd_enabled: false
+# NSD's loopback listener for the unbound stub-zone (unbound holds 127.0.0.1:53).
+nsd_stub_port: 5353
+
+# In-zone nameserver names; their A records are emitted into the zone and
+# become the registrar glue at delegation (the DNSSEC/cutover PR). These IPs
+# MUST match the authdns entries in anycast_services above.
+dns_ns_records:
+  - {name: ns1, ip: 44.34.132.53}
+  - {name: ns2, ip: 44.34.133.53}
+
+# SOA parameters. RNAME is a formality — there is no email on the domain (a
+# deliberate design decision); it never creates a mailbox or an MX record.
+dns_soa_rname: hostmaster.memhamwan.net.
+dns_soa_refresh: 3600
+dns_soa_retry: 900
+dns_soa_expire: 1209600
+dns_soa_negative_ttl: 300
+dns_zone_ttl: 300
 
 # ── DNS ──────────────────────────────────────────────────────────────────
 dns_zone: memhamwan.net

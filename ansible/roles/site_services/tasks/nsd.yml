@@ -1,0 +1,113 @@
+---
+# Authoritative DNS (NSD). Mirrors the anycast gate: entirely inert while
+# nsd_enabled is false (the package and config are left in place, like the
+# anycast teardown leaves frr) and unbound keeps serving the internal zone from
+# local-data as before. When enabled, NSD serves the inventory-rendered zone
+# authoritatively on the authdns anycast /32s + 127.0.0.1@{{ nsd_stub_port }},
+# and unbound resolves the internal zone via a stub-zone to it (see unbound.yml).
+#
+# This file is prep-only and inert when nsd_enabled is false. On enable it
+# installs (auto-start blocked), renders, and VALIDATES NSD while binding no
+# socket, so it runs BEFORE unbound is switched to stub mode: any package,
+# template, or nsd-check failure here aborts with unbound still authoritative
+# from local-data — the internal zone never goes dark on a failed enable. NSD is
+# enabled for boot but not started here (unbound still owns 0.0.0.0:53); the
+# render tasks notify "restart nsd", which starts it at the socket hand-off in
+# main.yml, right after "restart unbound" frees :53 (handler definition order).
+# The teardown (stopping a prior-deploy NSD) also lives in main.yml, before that
+# hand-off. See the ordering note there, and docs/dns-authority-design.md.
+
+- name: NSD enabled
+  when: nsd_enabled | bool
+  block:
+    # unbound switches to explicit interface binds in NSD mode and binds this
+    # host's own address. It must be a real IP: with gather_facts off and FQDN
+    # inventory names, ansible_host is the FQDN, so an unset `ip` would render a
+    # config that templates fine but cannot bind. Fail fast, here, with a clear
+    # message rather than at unbound start-up.
+    - name: Service host needs an inventory `ip` before NSD can be enabled
+      ansible.builtin.assert:
+        that:
+          - ip is defined
+          # dotted-quad shape check (no ansible.utils dependency) — enough to
+          # reject an unset ip or an accidental hostname; anchored both ends.
+          - ip | string is match('^(\d{1,3}\.){3}\d{1,3}$')
+        fail_msg: >-
+          nsd_enabled is true but {{ inventory_hostname }} has no usable
+          inventory `ip:`. Set it (an IPv4 address) in the inventory — unbound
+          binds it explicitly in NSD mode and cannot bind a hostname.
+        quiet: true
+
+    # policy_rc_d 101 blocks the package's auto-start: the stock nsd.conf listens
+    # on all interfaces, so a postinst start would try to grab :53 and collide
+    # with unbound (still bound to the recursive anycast IPs). NSD is started
+    # explicitly at the end of this file, once its restricted config is in place.
+    - name: NSD package (do not auto-start on install)
+      ansible.builtin.apt:
+        name: nsd
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        policy_rc_d: 101
+
+    - name: Zones directory
+      ansible.builtin.file:
+        path: /etc/nsd/zones
+        state: directory
+        owner: root
+        group: nsd
+        mode: "0750"
+
+    - name: Install NSD server config
+      ansible.builtin.template:
+        src: nsd.conf.j2
+        dest: /etc/nsd/nsd.conf.d/netops.conf
+        mode: "0644"
+      notify: restart nsd
+
+    - name: Render the forward zone
+      ansible.builtin.template:
+        src: nsd-zone-forward.j2
+        dest: "/etc/nsd/zones/{{ dns_zone }}.zone"
+        owner: root
+        group: nsd
+        mode: "0640"
+      notify: restart nsd
+
+    # reverse_zone drives the $ORIGIN and the /24 the PTRs are filtered to.
+    - name: Render the reverse zones
+      ansible.builtin.template:
+        src: nsd-zone-reverse.j2
+        dest: "/etc/nsd/zones/{{ item }}.zone"
+        owner: root
+        group: nsd
+        mode: "0640"
+      loop: "{{ dns_reverse_zones }}"
+      vars:
+        reverse_zone: "{{ item }}"
+      notify: restart nsd
+
+    # nsd-checkconf validates only the server config — it does NOT parse the
+    # zonefiles, so a malformed zone would sail through here and then wedge NSD
+    # on restart. Check the config, then check every zonefile explicitly.
+    - name: Validate the NSD server configuration
+      ansible.builtin.command: nsd-checkconf /etc/nsd/nsd.conf
+      changed_when: false
+
+    # Every zone renders to /etc/nsd/zones/<zone>.zone (forward + each reverse),
+    # so the file path follows from the name.
+    - name: Validate every rendered zonefile
+      ansible.builtin.command: "nsd-checkzone {{ item }} /etc/nsd/zones/{{ item }}.zone"
+      changed_when: false
+      loop: "{{ [dns_zone] + dns_reverse_zones }}"
+
+    # Enable for boot only — do NOT start here. unbound still owns 0.0.0.0:53 at
+    # this point (it switches to explicit binds later, at the socket hand-off in
+    # main.yml), so a start now would fail address-in-use. The render tasks above
+    # notify "restart nsd", which fires at that hand-off right after "restart
+    # unbound" frees the sockets, so a first enable comes up on the same run.
+    - name: Enable NSD on boot (started at the socket hand-off, not here)
+      ansible.builtin.systemd:
+        name: nsd
+        enabled: true
+        daemon_reload: true

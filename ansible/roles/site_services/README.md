@@ -32,6 +32,67 @@ ansible-playbook playbooks/site_services.yml \
   -e anycast_enabled=true -e anycast_confirm=true
 ```
 
+## Third switch: authoritative NSD (`nsd_enabled`)
+
+A separate, independently-gated capability: serve `memhamwan.net` (and the
+reverse zones) **authoritatively** from NSD, co-located with unbound and chrony
+but separated **by address**. Design and cutover plan:
+[docs/dns-authority-design.md](../../../docs/dns-authority-design.md). This PR
+is the **serve-in-parallel** stage — NSD is live but **not delegated**; DNSSEC
+signing, the edge `:53` permit, and the registrar NS/glue/DS cutover are the
+next PR.
+
+| | `nsd_enabled: false` (default) | `nsd_enabled: true` |
+|---|---|---|
+| authoritative server | none — unbound answers the zone from `local-data` | NSD, on the `authdns` anycast /32s + `127.0.0.1@5353` |
+| unbound internal zone | `local-data` (rendered from inventory) | **stub-zone → local NSD** (`local-data` removed) |
+| unbound `:53` bind | `0.0.0.0` + `interface-automatic` | **explicit**: loopback, host IP, recursive anycast /32s only (never the `authdns` /32s) |
+| `authdns` /32s (`44.34.132.53`/`.133.53`) | in `anycast_services`, never placed on the interface | placed + announced only when NSD is healthy **and** the anycast master gate is on (`anycast_enabled=true`, `anycast_confirm=true`) — health-gated like dns/ntp. With `nsd_enabled` alone the /32s stay off the interface. |
+
+Enabling requires `-e nsd_confirm=true` **and record parity** — a stub-zone has
+no fall-through, so unbound becomes authoritative for the *whole* zone via NSD;
+any `memhamwan.net` name not in the rendered zone (grafana/prometheus/
+alertmanager + the ~77 Cloudflare-only records) NXDOMAINs on-net until it is
+added. See the design doc's D1 milestone.
+
+```sh
+# 1. Serve in parallel (after record parity + review): local NSD + unbound
+#    stub-zone. The authdns /32s are NOT yet on the interface or announced —
+#    the anycast master gate is still off. No sops needed yet; DNSSEC keys
+#    arrive with the next PR.
+ansible-playbook playbooks/site_services.yml \
+  -e nsd_enabled=true -e nsd_confirm=true
+
+# 2. Announce the authdns /32s. Reachability additionally requires the anycast
+#    master gate (and sops for the OSPF key), exactly like the dns/ntp /32s —
+#    nsd_enabled by itself never places or announces an address.
+ansible-playbook playbooks/site_services.yml \
+  -e nsd_enabled=true -e nsd_confirm=true \
+  -e anycast_enabled=true -e anycast_confirm=true
+```
+
+Why co-located but separated by address: unbound and NSD both want `:53`, so
+NSD binds only the `authdns` anycast pair + a `127.0.0.1@5353` loopback
+listener, and unbound (in NSD mode) drops its `0.0.0.0` wildcard for explicit
+binds that exclude those IPs. The loopback listener is what unbound's
+stub-zone resolves the internal zone through — the split-brain safeguard: on-net
+recursion always gets the fleet's own authoritative answers, never a stale copy
+or a broken public delegation. The zone is rendered from the inventory
+identically onto every host (no AXFR); `ip-transparent` lets both daemons bind
+the anycast /32s before the health script places them on `anycast0`.
+
+First-enable ordering matters and the role handles it: the NSD package is
+installed **without auto-starting** (its stock config would grab `:53` and
+collide with unbound), unbound is reconfigured and **restarted first** to free
+the wildcard socket (a `flush_handlers` in `tasks/main.yml`), and only then is
+NSD started onto the now-free authdns addresses. There is a sub-second window
+during that hand-off where unbound's stub points at an NSD that isn't up yet, so
+internal names briefly SERVFAIL — acceptable on a deliberate, gated enable. NSD
+also needs `do-not-query-localhost: no` on unbound in this mode (the default
+`yes` would block the stub target and SERVFAIL the whole internal zone), and the
+rendered zonefiles are `nsd-checkzone`-validated (not just `nsd-checkconf`,
+which never parses them) before the restart handler can fire.
+
 ## Before anycast can be enabled
 
 1. **`site_lan_interface`** must be set for the host in the inventory
