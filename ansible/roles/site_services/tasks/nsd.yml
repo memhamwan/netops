@@ -6,10 +6,16 @@
 # authoritatively on the authdns anycast /32s + 127.0.0.1@{{ nsd_stub_port }},
 # and unbound resolves the internal zone via a stub-zone to it (see unbound.yml).
 #
-# The teardown (stop + disable a prior-deploy NSD) lives in tasks/main.yml, not
-# here: it has to run BEFORE unbound reclaims the :53 wildcard, and this file is
-# imported after that restart. See the direction-aware hand-off note there.
-# See docs/dns-authority-design.md.
+# This file is prep-only and inert when nsd_enabled is false. On enable it
+# installs (auto-start blocked), renders, and VALIDATES NSD while binding no
+# socket, so it runs BEFORE unbound is switched to stub mode: any package,
+# template, or nsd-check failure here aborts with unbound still authoritative
+# from local-data — the internal zone never goes dark on a failed enable. NSD is
+# enabled for boot but not started here (unbound still owns 0.0.0.0:53); the
+# render tasks notify "restart nsd", which starts it at the socket hand-off in
+# main.yml, right after "restart unbound" frees :53 (handler definition order).
+# The teardown (stopping a prior-deploy NSD) also lives in main.yml, before that
+# hand-off. See the ordering note there, and docs/dns-authority-design.md.
 
 - name: NSD enabled
   when: nsd_enabled | bool
@@ -95,9 +101,13 @@
       changed_when: false
       loop: "{{ [dns_zone] + dns_reverse_zones }}"
 
-    - name: Enable NSD
+    # Enable for boot only — do NOT start here. unbound still owns 0.0.0.0:53 at
+    # this point (it switches to explicit binds later, at the socket hand-off in
+    # main.yml), so a start now would fail address-in-use. The render tasks above
+    # notify "restart nsd", which fires at that hand-off right after "restart
+    # unbound" frees the sockets, so a first enable comes up on the same run.
+    - name: Enable NSD on boot (started at the socket hand-off, not here)
       ansible.builtin.systemd:
         name: nsd
         enabled: true
-        state: started
         daemon_reload: true
