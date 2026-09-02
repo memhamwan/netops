@@ -30,18 +30,48 @@
 - name: Configure unbound
   ansible.builtin.import_tasks: unbound.yml
 
-# unbound MUST release its :53 wildcard before NSD starts. In NSD mode unbound
-# switches to explicit binds that exclude the authdns IPs; until that restart
-# actually happens the running unbound still owns 0.0.0.0:53, and NSD cannot
-# bind 44.34.132.53/.133.53 (address in use). Flush the unbound restart here so
-# nsd.yml starts NSD onto a freed socket. (The cost is a sub-second window where
-# unbound's stub-zone points at an NSD that isn't up yet — internal names
-# SERVFAIL until the next task starts it — acceptable on a deliberate enable.)
-- name: Release unbound's :53 wildcard before starting NSD
+# The :53 socket hand-off between unbound and NSD is direction-aware. unbound
+# binds the 0.0.0.0:53 wildcard in local-data mode and explicit per-address
+# binds (excluding the authdns /32s) in NSD mode; NSD binds 44.34.132.53/.133.53.
+# A wildcard bind and a specific-address bind on :53 are mutually exclusive, so
+# whichever process is RELEASING a socket must restart before the one CLAIMING
+# it — otherwise the claimer fails "address already in use":
+#   • enabling  — unbound restarts onto its explicit binds first (freeing the
+#     wildcard), then NSD starts onto the /32s (below, in nsd.yml).
+#   • disabling — NSD stops first (freeing the /32s), then unbound restarts onto
+#     the wildcard. Skipping this and letting the wildcard restart fire while a
+#     prior-deploy NSD still holds the /32s is the teardown address-in-use bug.
+# The unbound restart is a pending handler; flush it at the point that satisfies
+# whichever direction is in play.
+
+# DISABLE path: reconcile a running NSD from a prior enabled deploy — it would
+# otherwise keep answering on the authdns /32s while unbound reverts to
+# local-data — BEFORE unbound reclaims the wildcard just below.
+- name: Stop NSD before unbound reclaims the :53 wildcard (teardown)
+  when: not (nsd_enabled | bool)
+  block:
+    - name: Is NSD installed?
+      ansible.builtin.stat:
+        path: /lib/systemd/system/nsd.service
+      register: nsd_unit
+
+    - name: Stop and disable NSD
+      ansible.builtin.systemd:
+        name: nsd
+        state: stopped
+        enabled: false
+      when: nsd_unit.stat.exists
+
+# Flush the pending unbound restart. On enable this frees the wildcard for NSD;
+# on disable NSD is already stopped above, so unbound reclaims the wildcard
+# cleanly. (Enable cost: a sub-second window where unbound's stub-zone points at
+# an NSD that isn't up yet — internal names SERVFAIL until the next task starts
+# it — acceptable on a deliberate enable.)
+- name: Restart unbound onto its new :53 binds
   ansible.builtin.meta: flush_handlers
 
-# After unbound has freed the wildcard: install (without auto-start), render,
-# validate, and only then start NSD.
+# After the socket hand-off: on enable, install (without auto-start), render,
+# validate, and start NSD; on disable this file is inert.
 - name: Configure authoritative DNS (NSD)
   ansible.builtin.import_tasks: nsd.yml
 

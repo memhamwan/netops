@@ -47,7 +47,7 @@ next PR.
 | authoritative server | none — unbound answers the zone from `local-data` | NSD, on the `authdns` anycast /32s + `127.0.0.1@5353` |
 | unbound internal zone | `local-data` (rendered from inventory) | **stub-zone → local NSD** (`local-data` removed) |
 | unbound `:53` bind | `0.0.0.0` + `interface-automatic` | **explicit**: loopback, host IP, recursive anycast /32s only (never the `authdns` /32s) |
-| `authdns` /32s (`44.34.132.53`/`.133.53`) | in `anycast_services`, never placed on the interface | announced when NSD is healthy (health-gated like dns/ntp) |
+| `authdns` /32s (`44.34.132.53`/`.133.53`) | in `anycast_services`, never placed on the interface | placed + announced only when NSD is healthy **and** the anycast master gate is on (`anycast_enabled=true`, `anycast_confirm=true`) — health-gated like dns/ntp. With `nsd_enabled` alone the /32s stay off the interface. |
 
 Enabling requires `-e nsd_confirm=true` **and record parity** — a stub-zone has
 no fall-through, so unbound becomes authoritative for the *whole* zone via NSD;
@@ -56,10 +56,19 @@ alertmanager + the ~77 Cloudflare-only records) NXDOMAINs on-net until it is
 added. See the design doc's D1 milestone.
 
 ```sh
-# Authoritative NSD (after record parity + review). No sops needed yet —
-# DNSSEC keys arrive with the next PR.
+# 1. Serve in parallel (after record parity + review): local NSD + unbound
+#    stub-zone. The authdns /32s are NOT yet on the interface or announced —
+#    the anycast master gate is still off. No sops needed yet; DNSSEC keys
+#    arrive with the next PR.
 ansible-playbook playbooks/site_services.yml \
   -e nsd_enabled=true -e nsd_confirm=true
+
+# 2. Announce the authdns /32s. Reachability additionally requires the anycast
+#    master gate (and sops for the OSPF key), exactly like the dns/ntp /32s —
+#    nsd_enabled by itself never places or announces an address.
+ansible-playbook playbooks/site_services.yml \
+  -e nsd_enabled=true -e nsd_confirm=true \
+  -e anycast_enabled=true -e anycast_confirm=true
 ```
 
 Why co-located but separated by address: unbound and NSD both want `:53`, so
