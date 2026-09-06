@@ -1,0 +1,40 @@
+---
+# One RouterOS package download attempt. Sets download_ok=true once the package
+# is staged ("Downloaded, please reboot ...") and leaves it unset on a transient
+# failure (DNS timeout, dropped transfer on a lossy link) so the caller's loop
+# can try again. dl_attempt is the 1-based attempt number, for logging.
+- name: "Start the RouterOS package download, attempt {{ dl_attempt }}"
+  community.routeros.command:
+    commands:
+      - '/system package update download'
+  vars:
+    # `/system package update download` BLOCKS the CLI session until it finishes
+    # (or fails) — far longer than the default command_timeout on a slow link.
+    ansible_command_timeout: "{{ routeros_download_timeout }}"
+  changed_when: true
+  # a transient failure must not abort the play; the retry loop is the gate
+  failed_when: false
+
+- name: Read the download status
+  community.routeros.command:
+    commands:
+      - ':put [/system package update get status]'
+  register: fw_dl
+  changed_when: false
+
+# strip wrapped-echo lines, take the real status value
+- name: Record the download status
+  ansible.builtin.set_fact:
+    dl_status_text: "{{ ((fw_dl.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+
+- name: Mark the download complete when the package is staged
+  ansible.builtin.set_fact:
+    download_ok: true
+  when: dl_status_text is search('(?i)reboot')
+
+- name: Note a transient download failure (will retry)
+  ansible.builtin.debug:
+    msg: >-
+      Download attempt {{ dl_attempt }} on {{ inventory_hostname }} did not
+      complete (status: '{{ dl_status_text }}'); retrying if attempts remain.
+  when: not (download_ok | default(false))

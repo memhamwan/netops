@@ -99,38 +99,26 @@
     - name: Download the RouterOS package
       when: (((fw_status0.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) is not search('(?i)reboot')
       block:
-        - name: Start the download of {{ expected_version }}
-          community.routeros.command:
-            commands:
-              - '/system package update download'
-          vars:
-            # `/system package update download` BLOCKS the CLI session until the
-            # download finishes (or fails) — on a slow radio link that far
-            # exceeds the 60s command_timeout in ansible.cfg, which fails the
-            # task mid-download. Give this one command the full download budget;
-            # raise routeros_download_timeout in defaults/main.yml for slower links.
-            ansible_command_timeout: "{{ routeros_download_timeout }}"
-          changed_when: true
+        # Retry the download: over lossy radio links a lookup or transfer can
+        # transiently fail (seen on r1.hil: "could not resolve dns name (timeout)"
+        # even though check-for-updates resolved fine moments earlier). Each
+        # attempt sets download_ok on success; the loop stops once it is true.
+        - name: Download the RouterOS package (retry transient failures)
+          ansible.builtin.include_tasks: download_once.yml
+          loop: "{{ range(1, (routeros_download_attempts | int) + 1) | list }}"
+          loop_control:
+            loop_var: dl_attempt
+          when: not (download_ok | default(false))
 
-        # The blocking command above returns once the package is downloaded; this
-        # confirms the reboot-ready state (status contains "reboot": "Downloaded,
-        # please reboot ...") and catches a download that ended in an error state.
-        - name: Wait for the download to complete
-          community.routeros.command:
-            commands:
-              - ':put [/system package update get status]'
-          register: fw_dl
-          until: >-
-            (((fw_dl.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first is search('(?i)reboot'))
-            or (((fw_dl.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first is search('(?i)error'))
-          retries: "{{ (routeros_download_timeout | int // 10) }}"
-          delay: 10
-          changed_when: false
-
-        - name: Fail if the download errored
+        - name: Fail if the package never downloaded
           ansible.builtin.assert:
-            that: ((fw_dl.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first is not search('(?i)error')
-            fail_msg: "Download failed on {{ inventory_hostname }}: {{ ((fw_dl.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+            that: download_ok | default(false)
+            fail_msg: >-
+              {{ inventory_hostname }} could not download {{ expected_version }}
+              after {{ routeros_download_attempts }} attempts (last status:
+              '{{ dl_status_text | default('unknown') }}'). Likely DNS or
+              connectivity on the device — check /ip dns and the link, or upgrade
+              offline by staging the .npk (routeros_npk_source_dir).
 
     - name: Reboot into the new RouterOS package
       ansible.builtin.include_tasks: reboot_wait.yml
