@@ -110,6 +110,12 @@
   max_fail_percentage: 0
   vars:
     ansible_user: "{{ lookup('env', 'USER') }}"
+    # Distant radio nodes (e.g. r1.hil, ~170ms + lossy) drop enough of the SSH
+    # handshake that the default 30s persistent connect timeout fails where an
+    # interactive ssh (which keeps retrying) gets through. Be patient on connect
+    # and per-command. Override per run: -e routeros_connect_timeout=180
+    ansible_connect_timeout: "{{ routeros_connect_timeout | default(120) }}"
+    ansible_command_timeout: "{{ routeros_command_timeout | default(120) }}"
   pre_tasks:
     - name: Execution gate — this play is a draft pending review
       ansible.builtin.assert:
@@ -132,5 +138,15 @@
         fail_msg: >-
           No ssh-rsa host key for [{{ inventory_hostname }}]:{{ ansible_port | default(222) }}
           in ~/.ssh/known_hosts. Run `ansible-playbook playbooks/seed_known_hosts.yml`.
+
+    # On a lossy link the network_cli connect can fail before it starts; poll the
+    # SSH port from the controller first (tolerates loss — retries until it
+    # answers) so we don't fail the run on a single dropped handshake.
+    - name: Preflight — wait for the device SSH port to be reachable
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ ansible_port | default(222) }}"
+        timeout: "{{ routeros_connect_timeout | default(120) }}"
+      delegate_to: localhost
   roles:
     - routeros_firmware
