@@ -24,15 +24,16 @@
       - ':put [/system package update get status]'
       - ':put [/system package update get latest-version]'
   register: fw_check
-  until: (fw_check.stdout[0] | default('')) is not search('(?i)checking')
+  # value is the LAST line of each command's block (RouterOS wraps echoed :put)
+  until: (fw_check.stdout_lines[0] | default(['']) | last) is not search('(?i)checking')
   retries: 12
   delay: 5
   changed_when: false
 
 - name: Record the channel's latest version
   ansible.builtin.set_fact:
-    update_status: "{{ fw_check.stdout[0] | default('') | trim }}"
-    latest_version: "{{ fw_check.stdout[1] | default('') | trim }}"
+    update_status: "{{ fw_check.stdout_lines[0] | default(['']) | last | trim }}"
+    latest_version: "{{ fw_check.stdout_lines[1] | default(['']) | last | trim }}"
 
 - name: Fail if the update check could not reach MikroTik's servers
   ansible.builtin.assert:
@@ -99,16 +100,16 @@
           - ':put [/system package update get status]'
       register: fw_dl
       until: >-
-        ((fw_dl.stdout[0] | default('')) is search('(?i)reboot'))
-        or ((fw_dl.stdout[0] | default('')) is search('(?i)error'))
+        ((fw_dl.stdout_lines[0] | default(['']) | last) is search('(?i)reboot'))
+        or ((fw_dl.stdout_lines[0] | default(['']) | last) is search('(?i)error'))
       retries: "{{ (routeros_download_timeout | int // 10) }}"
       delay: 10
       changed_when: false
 
     - name: Fail if the download errored
       ansible.builtin.assert:
-        that: (fw_dl.stdout[0] | default('')) is not search('(?i)error')
-        fail_msg: "Download failed on {{ inventory_hostname }}: {{ fw_dl.stdout[0] | default('') }}"
+        that: (fw_dl.stdout_lines[0] | default(['']) | last) is not search('(?i)error')
+        fail_msg: "Download failed on {{ inventory_hostname }}: {{ fw_dl.stdout_lines[0] | default(['']) | last }}"
 
     - name: Reboot into the new RouterOS package
       ansible.builtin.include_tasks: reboot_wait.yml

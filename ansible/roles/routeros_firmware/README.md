@@ -88,6 +88,12 @@ a firmware upgrade needs. `ansible_user` defaults to `$USER`, key-based, same as
 4. Ordering is static data refreshed by hand from RoMON; a live-discovery
    variant is possible later but was kept out to keep the upgrade window
    deterministic and the ordering reviewable in a PR.
-5. No automatic rollback. If a device comes back on the wrong version the run
+5. RouterOS wraps the *echoed* `:put` command line when it is wider than the
+   detected terminal (~46 cols observed on mipsbe), leaking echo fragments into
+   the command output. The real value is always the **last line** of each
+   command's block, so all reads parse `stdout_lines[i] | last` — not the joined
+   `stdout[i]`. (Dropping `:put` is not an option: the module returns empty
+   without it.)
+6. No automatic rollback. If a device comes back on the wrong version the run
    halts (`any_errors_fatal`) so you can intervene; RouterOS keeps the previous
    version for a manual `/system package downgrade` if needed.
