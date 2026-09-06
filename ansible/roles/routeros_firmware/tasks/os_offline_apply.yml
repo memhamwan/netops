@@ -43,9 +43,15 @@
 # plain scp from the controller, NOT net_put — net_put wedges the network_cli
 # session (same lesson as the onboarding play). Uploading to the device root
 # queues the .npk for install on the next reboot.
+# Bound the transfer: on a radio link that black-holes mid-upload, an unbounded
+# scp would block the serial campaign until the OS tears down the TCP session.
+# ConnectTimeout caps the initial connect; ServerAlive* (15s × 8 ≈ 120s) aborts
+# a stalled transfer instead of hanging.
 - name: Upload the target .npk package(s) to the device
   ansible.builtin.command: >-
     scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+    -o ConnectTimeout={{ routeros_connect_timeout | default(120) }}
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=8
     {{ item }}
     {{ ansible_user }}@{{ inventory_hostname }}:/{{ item | basename }}
   delegate_to: localhost

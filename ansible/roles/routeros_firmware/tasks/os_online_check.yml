@@ -24,10 +24,14 @@
 
 - name: Query the requested channel without persisting the change
   block:
-    - name: Temporarily set the update channel to {{ routeros_update_channel }}
+    # Enforce HTTPS + certificate validation before talking to the update
+    # server. Unlike channel (a per-device preference we restore below), mode and
+    # check-certificate are security invariants — left enforced on purpose,
+    # idempotent on the fleet default (already https/yes).
+    - name: Set the update channel and enforce HTTPS transport for the check
       community.routeros.command:
         commands:
-          - '/system package update set channel={{ routeros_update_channel }}'
+          - '/system package update set channel={{ routeros_update_channel }} mode=https check-certificate=yes'
       changed_when: false
 
     - name: Check for updates on the configured channel

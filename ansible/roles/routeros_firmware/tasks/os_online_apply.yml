@@ -17,11 +17,11 @@
 # The check phase restores each device's original channel (it must be
 # non-mutating for pruned devices), so set the requested channel here — this is
 # the device that is actually upgrading, and the download pulls from the
-# configured channel.
-- name: Set the update channel to {{ routeros_update_channel }}
+# configured channel. Enforce HTTPS + certificate validation before the download.
+- name: Set the update channel and enforce HTTPS transport before download
   community.routeros.command:
     commands:
-      - '/system package update set channel={{ routeros_update_channel }}'
+      - '/system package update set channel={{ routeros_update_channel }} mode=https check-certificate=yes'
   changed_when: false
 
 - name: Check whether the package is already downloaded
@@ -46,7 +46,7 @@
       routeros_prestaged=true but {{ inventory_hostname }} has no package staged
       (status is not "Downloaded, please reboot"). Download {{ expected_version }}
       on the device by hand first — in a RouterOS terminal:
-      `/system package update set channel={{ routeros_update_channel }};
+      `/system package update set channel={{ routeros_update_channel }} mode=https check-certificate=yes;
       /system package update download` — wait for "Downloaded, please reboot",
       then re-run. Not rebooting.
   when: routeros_prestaged | default(false) | bool
