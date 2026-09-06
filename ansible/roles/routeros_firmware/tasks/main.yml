@@ -20,14 +20,16 @@
 - name: Record current state
   ansible.builtin.set_fact:
     # RouterOS wraps the echoed :put command when it is wider than the terminal,
-    # leaking echo lines into the output; the real value is always the LAST line
-    # of each command's block. See roles/routeros_firmware/README.md.
+    # leaking echo lines into the output — and when a value is EMPTY only those
+    # echo lines remain. So drop every echo line (they all contain :put, /system
+    # or a '<' wrap marker) and take what's left; empty means empty. See
+    # roles/routeros_firmware/README.md.
     # `/system resource get version` reads like "7.24.1 (stable)" — take the number.
-    installed_version: "{{ (pre.stdout_lines[0] | default(['']) | last).split(' ') | first | trim }}"
-    rb_current_fw: "{{ pre.stdout_lines[1] | default(['']) | last | trim }}"
-    rb_upgrade_fw: "{{ pre.stdout_lines[2] | default(['']) | last | trim }}"
-    is_routerboard: "{{ (pre.stdout_lines[3] | default(['false']) | last | trim) == 'true' }}"
-    arch_name: "{{ pre.stdout_lines[4] | default(['']) | last | trim }}"
+    installed_version: "{{ (((pre.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first).split(' ') | first }}"
+    rb_current_fw: "{{ ((pre.stdout_lines[1] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+    rb_upgrade_fw: "{{ ((pre.stdout_lines[2] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+    is_routerboard: "{{ (((pre.stdout_lines[3] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) == 'true' }}"
+    arch_name: "{{ ((pre.stdout_lines[4] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
 
 - name: Report the current state and plan for this device
   ansible.builtin.debug:
