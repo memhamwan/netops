@@ -15,10 +15,11 @@
 
 - name: Record the post-upgrade state
   ansible.builtin.set_fact:
+    # value is the LAST line of each command's block (RouterOS wraps echoed :put);
     # `/system resource get version` reads like "7.24.1 (stable)" — take the number
-    final_version: "{{ (post.stdout[0] | default('')).split(' ') | first | trim }}"
-    final_rb_fw: "{{ post.stdout[1] | default('') | trim }}"
-    is_routerboard: "{{ (post.stdout[2] | default('false') | trim) == 'true' }}"
+    final_version: "{{ (post.stdout_lines[0] | default(['']) | last).split(' ') | first | trim }}"
+    final_rb_fw: "{{ post.stdout_lines[1] | default(['']) | last | trim }}"
+    is_routerboard: "{{ (post.stdout_lines[2] | default(['false']) | last | trim) == 'true' }}"
 
 - name: Assert the device is on the expected RouterOS version
   ansible.builtin.assert:

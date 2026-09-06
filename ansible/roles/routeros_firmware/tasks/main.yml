@@ -19,12 +19,15 @@
 
 - name: Record current state
   ansible.builtin.set_fact:
-    # `/system resource get version` reads like "7.24.1 (stable)" — take the number
-    installed_version: "{{ (pre.stdout[0] | default('')).split(' ') | first | trim }}"
-    rb_current_fw: "{{ pre.stdout[1] | default('') | trim }}"
-    rb_upgrade_fw: "{{ pre.stdout[2] | default('') | trim }}"
-    is_routerboard: "{{ (pre.stdout[3] | default('false') | trim) == 'true' }}"
-    arch_name: "{{ pre.stdout[4] | default('') | trim }}"
+    # RouterOS wraps the echoed :put command when it is wider than the terminal,
+    # leaking echo lines into the output; the real value is always the LAST line
+    # of each command's block. See roles/routeros_firmware/README.md.
+    # `/system resource get version` reads like "7.24.1 (stable)" — take the number.
+    installed_version: "{{ (pre.stdout_lines[0] | default(['']) | last).split(' ') | first | trim }}"
+    rb_current_fw: "{{ pre.stdout_lines[1] | default(['']) | last | trim }}"
+    rb_upgrade_fw: "{{ pre.stdout_lines[2] | default(['']) | last | trim }}"
+    is_routerboard: "{{ (pre.stdout_lines[3] | default(['false']) | last | trim) == 'true' }}"
+    arch_name: "{{ pre.stdout_lines[4] | default(['']) | last | trim }}"
 
 - name: Report the current state and plan for this device
   ansible.builtin.debug:
