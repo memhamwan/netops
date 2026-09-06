@@ -5,32 +5,62 @@
 # upgrade.mikrotik.com, not the (bandwidth-heavy) package download, which is
 # deferred to os_online_apply.yml in the serial phase.
 
-- name: Set the update channel to {{ routeros_update_channel }}
+# The check phase runs fleet-wide, including on devices that turn out to be
+# already-current and get pruned before apply — so it must not leave a config
+# change behind. check-for-updates reports the CONFIGURED channel's
+# latest-version, so we do need the requested channel set while we query; set it,
+# query, then restore the device's original channel in `always`. The apply phase
+# re-sets the channel before downloading on the devices that actually upgrade.
+- name: Read the device's current update channel (to restore after the check)
   community.routeros.command:
     commands:
-      - '/system package update set channel={{ routeros_update_channel }}'
-  # convergent set; RouterOS returns nothing and re-setting is a no-op
+      - ':put [/system package update get channel]'
+  register: fw_chan0
   changed_when: false
 
-- name: Check for updates on the configured channel
-  community.routeros.command:
-    commands:
-      - '/system package update check-for-updates'
-  changed_when: false
+- name: Record the original update channel
+  ansible.builtin.set_fact:
+    _orig_channel: "{{ ((fw_chan0.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
 
-# check-for-updates is asynchronous ("status: checking for updates" until the
-# server answers); poll until it settles, then read the versions it reported.
-- name: Wait for the update check to finish
-  community.routeros.command:
-    commands:
-      - ':put [/system package update get status]'
-      - ':put [/system package update get latest-version]'
-  register: fw_check
-  # strip wrapped-echo lines, take the real value (empty stays empty)
-  until: (((fw_check.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) is not search('(?i)checking')
-  retries: 12
-  delay: 5
-  changed_when: false
+- name: Query the requested channel without persisting the change
+  block:
+    - name: Temporarily set the update channel to {{ routeros_update_channel }}
+      community.routeros.command:
+        commands:
+          - '/system package update set channel={{ routeros_update_channel }}'
+      changed_when: false
+
+    - name: Check for updates on the configured channel
+      community.routeros.command:
+        commands:
+          - '/system package update check-for-updates'
+      changed_when: false
+
+    # check-for-updates is asynchronous ("status: checking for updates" until the
+    # server answers); poll until it settles, then read the versions it reported.
+    - name: Wait for the update check to finish
+      community.routeros.command:
+        commands:
+          - ':put [/system package update get status]'
+          - ':put [/system package update get latest-version]'
+      register: fw_check
+      # strip wrapped-echo lines, take the real value (empty stays empty)
+      until: (((fw_check.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) is not search('(?i)checking')
+      retries: 12
+      delay: 5
+      changed_when: false
+  always:
+    # Leave the device on the channel it had — the check must be non-mutating for
+    # devices that never reach apply. Skip when it was already the requested one
+    # (nothing to restore) or unreadable (leave as-is rather than blank it).
+    - name: Restore the device's original update channel
+      community.routeros.command:
+        commands:
+          - '/system package update set channel={{ _orig_channel }}'
+      when:
+        - _orig_channel | length > 0
+        - _orig_channel != routeros_update_channel
+      changed_when: false
 
 - name: Record the channel's latest version
   ansible.builtin.set_fact:

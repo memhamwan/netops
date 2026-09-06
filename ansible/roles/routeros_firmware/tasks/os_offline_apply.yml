@@ -21,13 +21,23 @@
       routeros-{{ routeros_target_version }}-{{ arch_name }}.npk (and any
       extra packages you use) from mikrotik.com and place them there.
 
-- name: Fail if none of the .npk files name the target version
+# Match the version bounded by '-' on both sides — filenames are
+# routeros-<version>-<arch>.npk (and extra-package-<version>-<arch>.npk) — so a
+# target of 7.24.1 never matches routeros-7.24.10-arm.npk. regex_escape keeps the
+# dots literal. Both the assertion below AND the upload loop use this filtered
+# list, so only exact-version packages are ever uploaded.
+- name: Select the .npk file(s) whose name carries the exact target version
+  ansible.builtin.set_fact:
+    npk_target_files: >-
+      {{ npk_files | select('search', '-' ~ (routeros_target_version | regex_escape) ~ '-') | list }}
+
+- name: Fail if no .npk file matches the exact target version
   ansible.builtin.assert:
-    that: npk_files | select('search', routeros_target_version) | list | length > 0
+    that: npk_target_files | length > 0
     fail_msg: >-
-      None of the .npk files in {{ routeros_npk_source_dir }}/{{ arch_name }}/
-      contain '{{ routeros_target_version }}' in their name
-      ({{ npk_files | map('basename') | list | join(', ') }}). Refusing to
+      No .npk file in {{ routeros_npk_source_dir }}/{{ arch_name }}/ names the
+      exact version {{ routeros_target_version }}
+      (found: {{ npk_files | map('basename') | list | join(', ') }}). Refusing to
       upload the wrong version to {{ inventory_hostname }}.
 
 # plain scp from the controller, NOT net_put — net_put wedges the network_cli
@@ -39,7 +49,7 @@
     {{ item }}
     {{ ansible_user }}@{{ inventory_hostname }}:/{{ item | basename }}
   delegate_to: localhost
-  loop: "{{ npk_files }}"
+  loop: "{{ npk_target_files }}"
   loop_control:
     label: "{{ item | basename }}"
   changed_when: true

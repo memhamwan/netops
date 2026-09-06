@@ -14,6 +14,16 @@
 # routeros_prestaged=true — this play then never downloads: it requires the
 # package to be staged already and goes straight to the reboot.
 
+# The check phase restores each device's original channel (it must be
+# non-mutating for pruned devices), so set the requested channel here — this is
+# the device that is actually upgrading, and the download pulls from the
+# configured channel.
+- name: Set the update channel to {{ routeros_update_channel }}
+  community.routeros.command:
+    commands:
+      - '/system package update set channel={{ routeros_update_channel }}'
+  changed_when: false
+
 - name: Check whether the package is already downloaded
   community.routeros.command:
     commands:
@@ -41,10 +51,27 @@
       then re-run. Not rebooting.
   when: routeros_prestaged | default(false) | bool
 
-# Skip the (slow) download if it is already staged — either by the operator
-# (routeros_prestaged) or by a previous run.
+# Do NOT reuse a pre-existing staged package in normal mode: RouterOS does not
+# report the staged package's version (`get status` only says "Downloaded, please
+# reboot") and check-for-updates does not replace it, so a stale stage from an
+# earlier/different target could reboot the device onto the wrong version and
+# only surface at the final verify. Cancel it and download fresh — the download
+# pulls expected_version (the check phase asserted the channel serves it).
+# Pre-staged mode is the exception: it deliberately trusts the operator's
+# hand-staged package, with verify.yml as the version safety net.
+- name: Cancel any pre-existing staged package (avoid rebooting a stale version)
+  community.routeros.command:
+    commands:
+      - '/system package update cancel'
+  when:
+    - not (routeros_prestaged | default(false) | bool)
+    - _dl_staged | bool
+  changed_when: true
+  # nothing staged / nothing to cancel must not abort the run
+  failed_when: false
+
 - name: Download the RouterOS package
-  when: not (_dl_staged | bool)
+  when: not (routeros_prestaged | default(false) | bool)
   block:
     # Retry the download: over lossy radio links a lookup or transfer can
     # transiently fail (seen on r1.hil: "could not resolve dns name (timeout)"
