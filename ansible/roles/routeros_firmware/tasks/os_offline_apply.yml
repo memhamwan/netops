@@ -1,0 +1,52 @@
+---
+# APPLY phase (offline): upload the .npk package(s) for the pinned target and
+# reboot to apply them. This is the bandwidth-heavy, serial, deepest-first part —
+# one device at a time (see the playbook), so a shared radio backhaul never
+# carries two uploads at once.
+#
+# Included only when os_upgrade_needed, so there is no "already on target" guard
+# here — that decision was made and reported in os_offline_check.yml.
+
+- name: Locate the .npk package(s) for {{ arch_name }}
+  ansible.builtin.set_fact:
+    npk_files: >-
+      {{ query('fileglob', routeros_npk_source_dir ~ '/' ~ arch_name ~ '/*.npk') | sort }}
+
+- name: Fail if no .npk files were found for this architecture
+  ansible.builtin.assert:
+    that: npk_files | length > 0
+    fail_msg: >-
+      No .npk files in {{ routeros_npk_source_dir }}/{{ arch_name }}/ for
+      {{ inventory_hostname }} (architecture {{ arch_name }}). Download
+      routeros-{{ routeros_target_version }}-{{ arch_name }}.npk (and any
+      extra packages you use) from mikrotik.com and place them there.
+
+- name: Fail if none of the .npk files name the target version
+  ansible.builtin.assert:
+    that: npk_files | select('search', routeros_target_version) | list | length > 0
+    fail_msg: >-
+      None of the .npk files in {{ routeros_npk_source_dir }}/{{ arch_name }}/
+      contain '{{ routeros_target_version }}' in their name
+      ({{ npk_files | map('basename') | list | join(', ') }}). Refusing to
+      upload the wrong version to {{ inventory_hostname }}.
+
+# plain scp from the controller, NOT net_put — net_put wedges the network_cli
+# session (same lesson as the onboarding play). Uploading to the device root
+# queues the .npk for install on the next reboot.
+- name: Upload the target .npk package(s) to the device
+  ansible.builtin.command: >-
+    scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+    {{ item }}
+    {{ ansible_user }}@{{ inventory_hostname }}:/{{ item | basename }}
+  delegate_to: localhost
+  loop: "{{ npk_files }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  changed_when: true
+
+- name: Reboot to install the uploaded package(s)
+  ansible.builtin.include_tasks: reboot_wait.yml
+  vars:
+    rw_reason: "RouterOS {{ expected_version }} (offline)"
+    rw_trigger_cmds:
+      - ':execute {/system reboot}'

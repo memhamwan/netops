@@ -6,8 +6,19 @@ review.** `playbooks/routeros_firmware.yml` refuses to run without
 been reviewed. Nothing here has ever run against a device.
 
 Upgrades RouterOS (and the RouterBOARD bootloader firmware) across the wireless
-fleet, **one device at a time, deepest-chain-first**, and verifies each device
-lands on the expected version before moving on.
+fleet, and verifies each device lands on the expected version before moving on.
+
+The campaign runs in three plays (see `playbooks/routeros_firmware.yml`):
+
+1. **plan** — order the in-scope devices deepest-chain-first from RoMON topology.
+2. **check** — **in parallel**, read each device's version and decide whether it
+   needs an upgrade. This is cheap and low-bandwidth (a version query, not the
+   package download), so running it against the whole fleet at once is safe. Its
+   output prunes the serial phase to only the devices that actually change.
+3. **apply** — **one device at a time, deepest-first**, download/upload the
+   package and reboot, then upgrade RouterBOARD firmware and verify. The
+   byte-moving stays serial on purpose: devices on one chain share a radio
+   backhaul, so parallel downloads would contend and time out.
 
 ## Why the ordering matters
 
@@ -36,8 +47,18 @@ mapped chain with `-l` (e.g. `-l sco:ftn:hil:mno`).
 
 ## How a single device is upgraded (roles/routeros_firmware)
 
+The role is split into a **check** phase and an **apply** phase, selected by the
+`_fw_phase` var (the playbook sets it per play; direct role use defaults to
+`all`, which runs both back-to-back for one device). Steps 1–2a below are the
+check phase; 2b onward are the apply phase, skipped entirely for a device the
+check phase found already current.
+
 1. Read current version, RouterBOARD firmware, and architecture.
-2. RouterOS package, whichever mode applies:
+2a. Decide the expected version and whether an upgrade is needed (online:
+   `check-for-updates` for the channel's latest; offline: compare to the pinned
+   target). The v6→v7 and "channel can't serve the pinned target" guards fire
+   here, in the parallel phase, before any device reboots.
+2b. RouterOS package, whichever mode applies:
    - **online** (default): set the channel, `check-for-updates`, download, reboot;
    - **offline** (`routeros_npk_source_dir` set): upload the `.npk`(s) for the
      pinned version + architecture, reboot to apply.

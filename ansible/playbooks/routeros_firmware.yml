@@ -1,37 +1,91 @@
 ---
 # DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
 #
-# Serially upgrades RouterOS firmware across the wireless chains, DEEPEST FIRST,
-# so each device's reboot only takes down itself and gear already upgraded —
-# never a device still ahead of us in the run. Ordering comes from
-# ansible/firmware_topology.yml (derived from RoMON; refresh it first).
+# ===========================================================================
+# WHAT THIS DOES
+# ===========================================================================
+# Upgrades RouterOS firmware across the wireless chains in THREE plays:
 #
-# Runs over SSH as a human OPERATOR, not the `ansible` service account: firmware
-# upgrades reboot the device, and the netops-ansible group deliberately lacks
-# the `reboot` policy (operators are group `full`). Same auth model as
-# onboard_device.yml — ansible_user defaults to $USER, key-based.
+#   1. PLAN   — order the in-scope devices deepest-first from
+#               ansible/firmware_topology.yml (RoMON-derived) and refuse any
+#               host we cannot place in a chain (blast radius unknown).
+#   2. CHECK  — PARALLEL, read-only. Every in-scope device is queried at once:
+#               installed version, channel's latest, and whether it needs an
+#               upgrade. Cheap and low-bandwidth (a version query, NOT the
+#               package download). Devices already on the target RouterOS AND
+#               RouterBOARD firmware are dropped here, so the serial phase only
+#               visits devices that actually change. v6->v7 and unreachable-
+#               target problems fail the whole campaign HERE, before anything
+#               reboots.
+#   3. APPLY  — SERIAL, one device at a time, DEEPEST FIRST. Downloads (or
+#               uploads, offline) the package and reboots, then upgrades
+#               RouterBOARD firmware and verifies. Deepest-first means each
+#               reboot only takes down that device and gear already upgraded —
+#               never a device still ahead of us in the run; the core (r1.sco,
+#               depth 0) reboots the whole fleet, so it goes last.
 #
-# Upgrade to the channel's latest:
-#   ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
-#     -l sco:ftn:hil:mno            # scope to a mapped chain
+# WHY DOWNLOADS STAY SERIAL: devices on one chain share a single radio
+# backhaul. Downloading to several at once would contend for that link and
+# cause the transient timeouts this playbook already fights (see the retry
+# loop). So only the harmless checks are parallelized; the byte-moving stays
+# one-at-a-time.
 #
-# Pin an exact version and hard-verify every device ends on it:
-#   ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
-#     -e routeros_target_version=7.24.1 -l sco:ftn:hil:mno
+# ===========================================================================
+# HOW TO RUN IT AGAINST THE SITES WE HAVE ACTIVE TODAY
+# ===========================================================================
+# Only the SCO / FTN / HIL / MNO RoMON domain is mapped in
+# firmware_topology.yml today; those are the sites you can upgrade with this
+# playbook right now. atl, azo, mch, ret and the leb.* group reach the core
+# over routed (L3) links RoMON did not cross — they have NO topology entry ON
+# PURPOSE and the PLAN play will refuse them until they are mapped (or scoped
+# out with -l). See the COVERAGE / REFRESHING notes in firmware_topology.yml.
 #
-# Force a specific version the channel is not serving (offline .npk, arch-laid-out
-# under <dir>/<architecture-name>/*.npk):
-#   ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
-#     -e routeros_target_version=7.24.1 \
-#     -e routeros_npk_source_dir=~/routeros-npks -l mno
+# Runs over SSH as a human OPERATOR, not the `ansible` service account:
+# firmware upgrades reboot the device, and the netops-ansible group deliberately
+# lacks the `reboot` policy (operators are group `full`). ansible_user defaults
+# to $USER, key-based — same auth model as onboard_device.yml.
 #
-# First real run after review: add --check is NOT meaningful here (the upgrade is
-# operational, not declarative) — instead do a single leaf device first, e.g.
-#   -l sec3.mno.memhamwan.net
+# 0) First real run after review — prove it on ONE leaf before a whole chain:
+#      ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#        -l sec3.mno.memhamwan.net
+#    (--check is NOT meaningful here — the upgrade is operational, not
+#    declarative. A single deep leaf is the safe smoke test.)
+#
+# 1) Upgrade one active chain to the channel's latest:
+#      ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#        -l mno
+#
+# 2) Upgrade the whole active domain (all mapped sites), latest:
+#      ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#        -l sco:ftn:hil:mno
+#
+# 3) Pin an exact version and hard-verify every device ends on it:
+#      ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#        -e routeros_target_version=7.24.1 -l sco:ftn:hil:mno
+#
+# 4) Force a version the channel is not serving (offline .npk, laid out under
+#    <dir>/<architecture-name>/*.npk):
+#      ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#        -e routeros_target_version=7.24.1 \
+#        -e routeros_npk_source_dir=~/routeros-npks -l mno
+#
 # A crossing from v6 to v7 additionally needs -e routeros_allow_major_upgrade=true.
+#
+# TUNABLES FOR LOSSY LINKS (deep leaves like sec3.mno drop transfers):
+#   -e routeros_download_attempts=6     # download retries per device (default 3)
+#   -e routeros_download_timeout=1800   # seconds per attempt   (default 900)
+#   -e routeros_connect_timeout=180     # SSH connect patience  (default 120)
+# If downloads keep timing out on a device, it is almost always DNS on the box
+# (`/ip dns print` empty) — fix DNS fleet-wide first (routeros_baseline /
+# site_services), or stage the .npk offline (routeros_npk_source_dir).
+#
+# SAFETY NOTE: the CHECK play is all-or-nothing. If any in-scope device cannot
+# be assessed (unreachable, no DNS, pinned target not offered, un-opted v6->v7),
+# the run stops before APPLY touches anything. Fix that device or scope it out
+# with -l, then re-run.
 
 # ---------------------------------------------------------------------------
-# Play 1 — plan the serial order (deepest first) into the _firmware_run group.
+# Play 1 — PLAN: order the in-scope hosts deepest-first into _firmware_run.
 # ---------------------------------------------------------------------------
 - name: RouterOS firmware — plan the serial upgrade order
   hosts: 'routeros:!down'  # down group = known-dead devices, see inventory
@@ -86,9 +140,9 @@
           {{ firmware_run_order }}
       run_once: true
 
-    # add_host preserves this insertion order; play 2 iterates it with
-    # order: inventory. Existing inventory vars (network_cli, port 222, etc.)
-    # come along because these are the same inventory hosts.
+    # add_host preserves this insertion order; the check/apply plays iterate it
+    # with order: inventory. Existing inventory vars (network_cli, port 222,
+    # etc.) come along because these are the same inventory hosts.
     - name: Register the ordered hosts into the run group
       ansible.builtin.add_host:
         name: "{{ item }}"
@@ -99,14 +153,14 @@
       changed_when: false
 
 # ---------------------------------------------------------------------------
-# Play 2 — upgrade one device at a time, in the planned order.
+# Play 2 — CHECK: parallel, read-only. Assess every device, then prune the
+# apply set to only the devices that actually need work (deepest-first order
+# preserved) via the _firmware_apply group.
 # ---------------------------------------------------------------------------
-- name: RouterOS firmware — serial upgrade (deepest first)
+- name: RouterOS firmware — check versions (parallel, read-only)
   hosts: _firmware_run
   gather_facts: false
-  serial: 1               # one device at a time
-  order: inventory        # follow the add_host insertion order (depth desc)
-  any_errors_fatal: true  # a failed/mismatched device halts the whole campaign
+  any_errors_fatal: true  # a device we cannot assess halts the run before APPLY
   max_fail_percentage: 0
   vars:
     ansible_user: "{{ lookup('env', 'USER') }}"
@@ -116,6 +170,7 @@
     # and per-command. Override per run: -e routeros_connect_timeout=180
     ansible_connect_timeout: "{{ routeros_connect_timeout | default(120) }}"
     ansible_command_timeout: "{{ routeros_command_timeout | default(120) }}"
+    _fw_phase: check
   pre_tasks:
     - name: Execution gate — this play is a draft pending review
       ansible.builtin.assert:
@@ -124,7 +179,6 @@
 
     # libssh negotiates the ssh-rsa host key and cannot prompt on first contact;
     # without a pinned rsa entry it fails with an inscrutable "Host is unknown".
-    # (Same preflight as the onboarding/bootstrap plays.)
     - name: Preflight — look up pinned host key
       ansible.builtin.command: ssh-keygen -F "[{{ inventory_hostname }}]:{{ ansible_port | default(222) }}"
       register: hostkey_check
@@ -149,4 +203,77 @@
         timeout: "{{ routeros_connect_timeout | default(120) }}"
       delegate_to: localhost
   roles:
-    - routeros_firmware
+    - routeros_firmware   # _fw_phase=check → read state + decide only, no reboot
+  post_tasks:
+    # Walk the deepest-first plan and keep only the devices the check phase
+    # flagged as needing work; order is preserved because we iterate the
+    # already-ordered firmware_run_order.
+    - name: Select the devices that need the apply phase (deepest-first)
+      ansible.builtin.set_fact:
+        firmware_apply_order: "{{ firmware_apply_order | default([]) + [item] }}"
+      loop: "{{ firmware_run_order }}"
+      when: hostvars[item]._fw_needs_apply | default(false) | bool
+      run_once: true
+
+    - name: Register the devices needing work into the apply group
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: _firmware_apply
+        ansible_user: "{{ lookup('env', 'USER') }}"
+      loop: "{{ firmware_apply_order | default([]) }}"
+      run_once: true
+      changed_when: false
+
+    - name: Show the apply plan (and what is skipped as already-current)
+      ansible.builtin.debug:
+        msg: >-
+          Apply phase (serial, deepest-first):
+          {{ firmware_apply_order | default([]) | ternary(firmware_apply_order | default([]), 'nothing — all in-scope devices are already current') }}.
+          Skipped (already current):
+          {{ firmware_run_order | difference(firmware_apply_order | default([])) | list }}
+      run_once: true
+
+# ---------------------------------------------------------------------------
+# Play 3 — APPLY: serial, one device at a time, deepest first. Only the devices
+# the check phase found to need work are in _firmware_apply (empty = no-op run).
+# ---------------------------------------------------------------------------
+- name: RouterOS firmware — serial upgrade (deepest first)
+  hosts: _firmware_apply
+  gather_facts: false
+  serial: 1               # one device at a time
+  order: inventory        # follow the add_host insertion order (depth desc)
+  any_errors_fatal: true  # a failed/mismatched device halts the whole campaign
+  max_fail_percentage: 0
+  vars:
+    ansible_user: "{{ lookup('env', 'USER') }}"
+    ansible_connect_timeout: "{{ routeros_connect_timeout | default(120) }}"
+    ansible_command_timeout: "{{ routeros_command_timeout | default(120) }}"
+    _fw_phase: apply
+  pre_tasks:
+    - name: Execution gate — this play is a draft pending review
+      ansible.builtin.assert:
+        that: confirm_execution | default(false) | bool
+        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+
+    - name: Preflight — look up pinned host key
+      ansible.builtin.command: ssh-keygen -F "[{{ inventory_hostname }}]:{{ ansible_port | default(222) }}"
+      register: hostkey_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Preflight — libssh needs a pinned ssh-rsa host key
+      ansible.builtin.assert:
+        that: "'ssh-rsa' in hostkey_check.stdout"
+        fail_msg: >-
+          No ssh-rsa host key for [{{ inventory_hostname }}]:{{ ansible_port | default(222) }}
+          in ~/.ssh/known_hosts. Run `ansible-playbook playbooks/seed_known_hosts.yml`.
+
+    - name: Preflight — wait for the device SSH port to be reachable
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ ansible_port | default(222) }}"
+        timeout: "{{ routeros_connect_timeout | default(120) }}"
+      delegate_to: localhost
+  roles:
+    - routeros_firmware   # _fw_phase=apply → download/upload + reboot + verify

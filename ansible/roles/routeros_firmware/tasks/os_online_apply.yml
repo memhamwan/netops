@@ -1,0 +1,50 @@
+---
+# APPLY phase (online): expected_version was selected in the check phase; now
+# download the package and reboot into it. This is the bandwidth-heavy, serial,
+# deepest-first part — it runs one device at a time (see the playbook) so lossy
+# shared radio backhauls are never asked to carry two downloads at once.
+#
+# Included only when os_upgrade_needed, so there is no "already on target" guard
+# here — that decision was made and reported in os_online_check.yml.
+
+- name: Check whether the package is already downloaded
+  community.routeros.command:
+    commands:
+      - ':put [/system package update get status]'
+  register: fw_status0
+  changed_when: false
+
+# Skip the (slow) download if it is already staged — RouterOS holds the
+# downloaded package across sessions ("Downloaded, please reboot ..."), so a
+# device staged by a previous run (or that self-rebooted after the check phase
+# and we re-entered) is handled without re-downloading.
+- name: Download the RouterOS package
+  when: (((fw_status0.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) is not search('(?i)reboot')
+  block:
+    # Retry the download: over lossy radio links a lookup or transfer can
+    # transiently fail (seen on r1.hil: "could not resolve dns name (timeout)"
+    # even though check-for-updates resolved fine moments earlier). Each attempt
+    # sets download_ok on success; the loop stops once it is true.
+    - name: Download the RouterOS package (retry transient failures)
+      ansible.builtin.include_tasks: download_once.yml
+      loop: "{{ range(1, (routeros_download_attempts | int) + 1) | list }}"
+      loop_control:
+        loop_var: dl_attempt
+      when: not (download_ok | default(false))
+
+    - name: Fail if the package never downloaded
+      ansible.builtin.assert:
+        that: download_ok | default(false)
+        fail_msg: >-
+          {{ inventory_hostname }} could not download {{ expected_version }}
+          after {{ routeros_download_attempts }} attempts (last status:
+          '{{ dl_status_text | default('unknown') }}'). Likely DNS or
+          connectivity on the device — check /ip dns and the link, or upgrade
+          offline by staging the .npk (routeros_npk_source_dir).
+
+- name: Reboot into the new RouterOS package
+  ansible.builtin.include_tasks: reboot_wait.yml
+  vars:
+    rw_reason: "RouterOS {{ expected_version }}"
+    rw_trigger_cmds:
+      - ':execute {/system reboot}'

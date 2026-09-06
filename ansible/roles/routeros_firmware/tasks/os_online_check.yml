@@ -1,7 +1,9 @@
 ---
-# Online RouterOS package upgrade via the update channel. Sets expected_version
-# and os_upgrade_needed for the rest of the role, and (if an upgrade is needed)
-# downloads the package and reboots into it.
+# CHECK phase (online): decide what this device needs, WITHOUT moving bytes or
+# rebooting. Sets expected_version and os_upgrade_needed. Safe to run in
+# parallel across the whole fleet — check-for-updates is a tiny query to
+# upgrade.mikrotik.com, not the (bandwidth-heavy) package download, which is
+# deferred to os_online_apply.yml in the serial phase.
 
 - name: Set the update channel to {{ routeros_update_channel }}
   community.routeros.command:
@@ -67,6 +69,9 @@
   ansible.builtin.set_fact:
     os_upgrade_needed: "{{ installed_version != expected_version }}"
 
+# Fail-fast in the parallel check phase means a v6 box deep in the chain is
+# caught BEFORE any device in the campaign reboots — not partway through the
+# serial run after earlier devices already upgraded.
 - name: Refuse an unintended v6 -> v7 major jump
   ansible.builtin.assert:
     that: >-
@@ -81,48 +86,5 @@
 
 - name: Report that the RouterOS package is already on target
   ansible.builtin.debug:
-    msg: "{{ inventory_hostname }} already on {{ installed_version }}; skipping package upgrade."
+    msg: "{{ inventory_hostname }} already on {{ installed_version }}; no package upgrade needed."
   when: not (os_upgrade_needed | bool)
-
-- name: Download and install the RouterOS package
-  when: os_upgrade_needed | bool
-  block:
-    - name: Check whether the package is already downloaded
-      community.routeros.command:
-        commands:
-          - ':put [/system package update get status]'
-      register: fw_status0
-      changed_when: false
-
-    # Skip the (slow) download if a previous run already staged it — RouterOS
-    # holds the downloaded package across reruns ("Downloaded, please reboot ...").
-    - name: Download the RouterOS package
-      when: (((fw_status0.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) is not search('(?i)reboot')
-      block:
-        # Retry the download: over lossy radio links a lookup or transfer can
-        # transiently fail (seen on r1.hil: "could not resolve dns name (timeout)"
-        # even though check-for-updates resolved fine moments earlier). Each
-        # attempt sets download_ok on success; the loop stops once it is true.
-        - name: Download the RouterOS package (retry transient failures)
-          ansible.builtin.include_tasks: download_once.yml
-          loop: "{{ range(1, (routeros_download_attempts | int) + 1) | list }}"
-          loop_control:
-            loop_var: dl_attempt
-          when: not (download_ok | default(false))
-
-        - name: Fail if the package never downloaded
-          ansible.builtin.assert:
-            that: download_ok | default(false)
-            fail_msg: >-
-              {{ inventory_hostname }} could not download {{ expected_version }}
-              after {{ routeros_download_attempts }} attempts (last status:
-              '{{ dl_status_text | default('unknown') }}'). Likely DNS or
-              connectivity on the device — check /ip dns and the link, or upgrade
-              offline by staging the .npk (routeros_npk_source_dir).
-
-    - name: Reboot into the new RouterOS package
-      ansible.builtin.include_tasks: reboot_wait.yml
-      vars:
-        rw_reason: "RouterOS {{ expected_version }}"
-        rw_trigger_cmds:
-          - ':execute {/system reboot}'
