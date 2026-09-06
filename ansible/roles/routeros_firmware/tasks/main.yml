@@ -86,6 +86,27 @@
 # ---------------------------------------------------------------------------
 # APPLY phase — moves bytes and reboots. The playbook runs this serially.
 # ---------------------------------------------------------------------------
+# The apply phase consumes facts the check phase set (expected_version,
+# os_upgrade_needed, is_routerboard; arch_name in offline mode). In the playbook
+# these persist from the check play; but running the role directly with
+# _fw_phase=apply skips the check tasks, so fail fast with a clear message
+# instead of a later undefined-variable error. (_fw_phase=all runs check inline,
+# so it is exempt.)
+- name: Apply phase requires the check phase to have run first
+  ansible.builtin.assert:
+    that:
+      - expected_version is defined
+      - os_upgrade_needed is defined
+      - is_routerboard is defined
+      - (routeros_npk_source_dir | length == 0) or (arch_name is defined)
+    fail_msg: >-
+      _fw_phase=apply but the check-phase facts are missing on
+      {{ inventory_hostname }} (expected_version / os_upgrade_needed /
+      is_routerboard). Run the check phase first — the playbook does this
+      automatically across its plays; for a single device use _fw_phase=all.
+    quiet: true
+  when: _fw_phase | default('all') == 'apply'
+
 - name: RouterOS package upgrade (offline .npk)
   ansible.builtin.include_tasks: os_offline_apply.yml
   when:

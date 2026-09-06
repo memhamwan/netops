@@ -220,12 +220,15 @@
     - routeros_firmware   # _fw_phase=check → read state + decide only, no reboot
   post_tasks:
     # Walk the deepest-first plan and keep only the devices the check phase
-    # flagged as needing work; order is preserved because we iterate the
-    # already-ordered firmware_run_order.
+    # flagged as needing work. Iterate the _firmware_run GROUP (not the
+    # firmware_run_order fact): the group is globally visible and add_host
+    # preserved its deepest-first insertion order, so this is correct from
+    # whichever host run_once lands on — the fact was set run_once in the PLAN
+    # play and is not guaranteed present on this play's run_once host.
     - name: Select the devices that need the apply phase (deepest-first)
       ansible.builtin.set_fact:
         firmware_apply_order: "{{ firmware_apply_order | default([]) + [item] }}"
-      loop: "{{ firmware_run_order }}"
+      loop: "{{ groups['_firmware_run'] }}"
       when: hostvars[item]._fw_needs_apply | default(false) | bool
       run_once: true
 
@@ -244,7 +247,7 @@
           Apply phase (serial, deepest-first):
           {{ firmware_apply_order | default([]) | ternary(firmware_apply_order | default([]), 'nothing — all in-scope devices are already current') }}.
           Skipped (already current):
-          {{ firmware_run_order | difference(firmware_apply_order | default([])) | list }}
+          {{ groups['_firmware_run'] | difference(firmware_apply_order | default([])) | list }}
       run_once: true
 
 # ---------------------------------------------------------------------------
