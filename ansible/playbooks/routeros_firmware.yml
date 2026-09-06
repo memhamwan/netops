@@ -1,0 +1,136 @@
+---
+# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+#
+# Serially upgrades RouterOS firmware across the wireless chains, DEEPEST FIRST,
+# so each device's reboot only takes down itself and gear already upgraded —
+# never a device still ahead of us in the run. Ordering comes from
+# ansible/firmware_topology.yml (derived from RoMON; refresh it first).
+#
+# Runs over SSH as a human OPERATOR, not the `ansible` service account: firmware
+# upgrades reboot the device, and the netops-ansible group deliberately lacks
+# the `reboot` policy (operators are group `full`). Same auth model as
+# onboard_device.yml — ansible_user defaults to $USER, key-based.
+#
+# Upgrade to the channel's latest:
+#   ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#     -l sco:ftn:hil:mno            # scope to a mapped chain
+#
+# Pin an exact version and hard-verify every device ends on it:
+#   ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#     -e routeros_target_version=7.24.1 -l sco:ftn:hil:mno
+#
+# Force a specific version the channel is not serving (offline .npk, arch-laid-out
+# under <dir>/<architecture-name>/*.npk):
+#   ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#     -e routeros_target_version=7.24.1 \
+#     -e routeros_npk_source_dir=~/routeros-npks -l mno
+#
+# First real run after review: add --check is NOT meaningful here (the upgrade is
+# operational, not declarative) — instead do a single leaf device first, e.g.
+#   -l sec3.mno.memhamwan.net
+# A crossing from v6 to v7 additionally needs -e routeros_allow_major_upgrade=true.
+
+# ---------------------------------------------------------------------------
+# Play 1 — plan the serial order (deepest first) into the _firmware_run group.
+# ---------------------------------------------------------------------------
+- name: RouterOS firmware — plan the serial upgrade order
+  hosts: 'routeros:!down'  # down group = known-dead devices, see inventory
+  gather_facts: false
+  tasks:
+    - name: Execution gate — this play is a draft pending review
+      ansible.builtin.assert:
+        that: confirm_execution | default(false) | bool
+        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+      run_once: true
+
+    - name: Load the firmware topology (RoMON-derived ordering)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../firmware_topology.yml"
+      run_once: true
+      delegate_to: localhost
+
+    # Refuse to upgrade any in-scope host whose place in the chains we do not
+    # know — upgrading a device without knowing what is behind it is exactly the
+    # outage this playbook exists to prevent.
+    - name: Fail on any in-scope host missing from the topology
+      ansible.builtin.assert:
+        that: >-
+          ansible_play_hosts_all
+          | difference(firmware_topology.keys() | list)
+          | length == 0
+        fail_msg: >-
+          These hosts have no firmware_topology entry (blast radius unknown):
+          {{ ansible_play_hosts_all | difference(firmware_topology.keys() | list) | join(', ') }}.
+          Map them from RoMON (see ansible/firmware_topology.yml) or scope the run
+          with -l to a mapped chain (e.g. -l sco:ftn:hil:mno).
+      run_once: true
+
+    - name: Pair each in-scope host with its depth
+      ansible.builtin.set_fact:
+        _fw_pairs: >-
+          {{ _fw_pairs | default([])
+             + [{'host': item, 'depth': firmware_topology[item].fw_depth}] }}
+      loop: "{{ ansible_play_hosts_all | sort }}"  # stable order within a depth
+      run_once: true
+
+    - name: Order hosts deepest-first (leaves before the core)
+      ansible.builtin.set_fact:
+        firmware_run_order: >-
+          {{ (_fw_pairs | sort(attribute='depth') | map(attribute='host') | list) | reverse | list }}
+      run_once: true
+
+    - name: Show the planned upgrade order
+      ansible.builtin.debug:
+        msg: >-
+          Serial upgrade order (deepest first, one at a time):
+          {{ firmware_run_order }}
+      run_once: true
+
+    # add_host preserves this insertion order; play 2 iterates it with
+    # order: inventory. Existing inventory vars (network_cli, port 222, etc.)
+    # come along because these are the same inventory hosts.
+    - name: Register the ordered hosts into the run group
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: _firmware_run
+        ansible_user: "{{ lookup('env', 'USER') }}"
+      loop: "{{ firmware_run_order }}"
+      run_once: true
+      changed_when: false
+
+# ---------------------------------------------------------------------------
+# Play 2 — upgrade one device at a time, in the planned order.
+# ---------------------------------------------------------------------------
+- name: RouterOS firmware — serial upgrade (deepest first)
+  hosts: _firmware_run
+  gather_facts: false
+  serial: 1               # one device at a time
+  order: inventory        # follow the add_host insertion order (depth desc)
+  any_errors_fatal: true  # a failed/mismatched device halts the whole campaign
+  max_fail_percentage: 0
+  vars:
+    ansible_user: "{{ lookup('env', 'USER') }}"
+  pre_tasks:
+    - name: Execution gate — this play is a draft pending review
+      ansible.builtin.assert:
+        that: confirm_execution | default(false) | bool
+        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+
+    # libssh negotiates the ssh-rsa host key and cannot prompt on first contact;
+    # without a pinned rsa entry it fails with an inscrutable "Host is unknown".
+    # (Same preflight as the onboarding/bootstrap plays.)
+    - name: Preflight — look up pinned host key
+      ansible.builtin.command: ssh-keygen -F "[{{ inventory_hostname }}]:{{ ansible_port | default(222) }}"
+      register: hostkey_check
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Preflight — libssh needs a pinned ssh-rsa host key
+      ansible.builtin.assert:
+        that: "'ssh-rsa' in hostkey_check.stdout"
+        fail_msg: >-
+          No ssh-rsa host key for [{{ inventory_hostname }}]:{{ ansible_port | default(222) }}
+          in ~/.ssh/known_hosts. Run `ansible-playbook playbooks/seed_known_hosts.yml`.
+  roles:
+    - routeros_firmware

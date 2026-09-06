@@ -1,0 +1,40 @@
+---
+# Final gate: prove the device is on the expected version. A failure here trips
+# any_errors_fatal in the playbook and halts the serial run, so a device that
+# came back on the wrong version stops the campaign instead of quietly leaving
+# the fleet mismatched.
+
+- name: Re-read version + RouterBOARD firmware after the upgrade
+  community.routeros.command:
+    commands:
+      - ':put [/system resource get version]'
+      - ':put [/system routerboard get current-firmware]'
+      - ':put [/system routerboard get routerboard]'
+  register: post
+  changed_when: false
+
+- name: Record the post-upgrade state
+  ansible.builtin.set_fact:
+    # `/system resource get version` reads like "7.24.1 (stable)" — take the number
+    final_version: "{{ (post.stdout[0] | default('')).split(' ') | first | trim }}"
+    final_rb_fw: "{{ post.stdout[1] | default('') | trim }}"
+    is_routerboard: "{{ (post.stdout[2] | default('false') | trim) == 'true' }}"
+
+- name: Assert the device is on the expected RouterOS version
+  ansible.builtin.assert:
+    that: final_version == expected_version
+    fail_msg: >-
+      {{ inventory_hostname }} is running RouterOS {{ final_version }} after the
+      upgrade, expected {{ expected_version }}. Halting the run so the rest of
+      the chain is not disturbed. Investigate this device before re-running.
+    success_msg: "{{ inventory_hostname }} is on RouterOS {{ final_version }} ✓"
+
+- name: Assert RouterBOARD firmware matches the RouterOS version
+  ansible.builtin.assert:
+    that: final_rb_fw == expected_version
+    fail_msg: >-
+      {{ inventory_hostname }} RouterBOARD firmware is {{ final_rb_fw }}, expected
+      {{ expected_version }}. The bootloader upgrade did not take — investigate
+      before re-running.
+    success_msg: "{{ inventory_hostname }} RouterBOARD firmware is {{ final_rb_fw }} ✓"
+  when: (routeros_upgrade_routerboard | bool) and (is_routerboard | bool)

@@ -1,0 +1,118 @@
+---
+# Online RouterOS package upgrade via the update channel. Sets expected_version
+# and os_upgrade_needed for the rest of the role, and (if an upgrade is needed)
+# downloads the package and reboots into it.
+
+- name: Set the update channel to {{ routeros_update_channel }}
+  community.routeros.command:
+    commands:
+      - '/system package update set channel={{ routeros_update_channel }}'
+  # convergent set; RouterOS returns nothing and re-setting is a no-op
+  changed_when: false
+
+- name: Check for updates on the configured channel
+  community.routeros.command:
+    commands:
+      - '/system package update check-for-updates'
+  changed_when: false
+
+# check-for-updates is asynchronous ("status: checking for updates" until the
+# server answers); poll until it settles, then read the versions it reported.
+- name: Wait for the update check to finish
+  community.routeros.command:
+    commands:
+      - ':put [/system package update get status]'
+      - ':put [/system package update get latest-version]'
+  register: fw_check
+  until: (fw_check.stdout[0] | default('')) is not search('(?i)checking')
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Record the channel's latest version
+  ansible.builtin.set_fact:
+    update_status: "{{ fw_check.stdout[0] | default('') | trim }}"
+    latest_version: "{{ fw_check.stdout[1] | default('') | trim }}"
+
+- name: Fail if the update check could not reach MikroTik's servers
+  ansible.builtin.assert:
+    that: latest_version | length > 0
+    fail_msg: >-
+      check-for-updates returned no latest-version on {{ inventory_hostname }}
+      (status: '{{ update_status }}'). The device could not reach
+      upgrade.mikrotik.com — check its internet path/DNS, or upgrade offline by
+      setting routeros_npk_source_dir.
+
+- name: Establish the expected end-state version
+  ansible.builtin.set_fact:
+    # target pins the version; otherwise "latest" is whatever the channel serves
+    expected_version: "{{ routeros_target_version if (routeros_target_version | length > 0) else latest_version }}"
+
+# Never reboot toward a version we cannot actually install online: if a target
+# was pinned but the channel is not serving it, stop before touching the device.
+- name: Fail fast when the channel cannot deliver the pinned target
+  ansible.builtin.assert:
+    that: latest_version == routeros_target_version
+    fail_msg: >-
+      Channel '{{ routeros_update_channel }}' offers {{ latest_version }}, not
+      the requested {{ routeros_target_version }}. Choose the channel that
+      publishes {{ routeros_target_version }}, or supply the .npk offline
+      (routeros_npk_source_dir). Not rebooting {{ inventory_hostname }}.
+  when: routeros_target_version | length > 0
+
+- name: Decide whether a RouterOS package upgrade is needed
+  ansible.builtin.set_fact:
+    os_upgrade_needed: "{{ installed_version != expected_version }}"
+
+- name: Refuse an unintended v6 -> v7 major jump
+  ansible.builtin.assert:
+    that: >-
+      (installed_version.split('.')[0] != '6')
+      or (expected_version.split('.')[0] != '7')
+      or (routeros_allow_major_upgrade | bool)
+    fail_msg: >-
+      {{ inventory_hostname }} would jump {{ installed_version }} ->
+      {{ expected_version }} (v6 -> v7 major migration). Review the config
+      migration for this device, then pass -e routeros_allow_major_upgrade=true.
+  when: os_upgrade_needed | bool
+
+- name: Report that the RouterOS package is already on target
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} already on {{ installed_version }}; skipping package upgrade."
+  when: not (os_upgrade_needed | bool)
+
+- name: Download and install the RouterOS package
+  when: os_upgrade_needed | bool
+  block:
+    - name: Start the download of {{ expected_version }}
+      community.routeros.command:
+        commands:
+          - '/system package update download'
+      changed_when: true
+
+    # The session stays up while it downloads, so poll the status field. It ends
+    # in a string containing "reboot" ("Downloaded, please reboot ...") on
+    # success, or one containing "error" on failure.
+    - name: Wait for the download to complete
+      community.routeros.command:
+        commands:
+          - ':put [/system package update get status]'
+      register: fw_dl
+      until: >-
+        ((fw_dl.stdout[0] | default('')) is search('(?i)reboot'))
+        or ((fw_dl.stdout[0] | default('')) is search('(?i)error'))
+      retries: "{{ (routeros_download_timeout | int // 10) }}"
+      delay: 10
+      changed_when: false
+
+    - name: Fail if the download errored
+      ansible.builtin.assert:
+        that: (fw_dl.stdout[0] | default('')) is not search('(?i)error')
+        fail_msg: "Download failed on {{ inventory_hostname }}: {{ fw_dl.stdout[0] | default('') }}"
+
+    - name: Reboot into the new RouterOS package
+      ansible.builtin.include_tasks: reboot_wait.yml
+      vars:
+        rw_reason: "RouterOS {{ expected_version }}"
+        rw_trigger_cmds:
+          - '/system reboot'

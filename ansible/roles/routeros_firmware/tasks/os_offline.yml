@@ -1,0 +1,82 @@
+---
+# Offline RouterOS upgrade: upload the .npk package(s) for the pinned target and
+# reboot to apply them. This is the only way to force an exact version the
+# channel is not currently serving (a specific/older build, or catching a v6
+# box up to a chosen v7). Sets expected_version and os_upgrade_needed.
+
+- name: Offline upgrade requires a pinned target version
+  ansible.builtin.assert:
+    that: routeros_target_version | length > 0
+    fail_msg: >-
+      routeros_npk_source_dir is set (offline mode) but routeros_target_version
+      is empty. Offline upgrades install specific .npk files, so name the version
+      you are installing: -e routeros_target_version=7.24.1
+
+- name: Establish the expected end-state version
+  ansible.builtin.set_fact:
+    expected_version: "{{ routeros_target_version }}"
+    os_upgrade_needed: "{{ installed_version != routeros_target_version }}"
+
+- name: Report that the RouterOS package is already on target
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} already on {{ installed_version }}; skipping offline upgrade."
+  when: not (os_upgrade_needed | bool)
+
+- name: Refuse an unintended v6 -> v7 major jump
+  ansible.builtin.assert:
+    that: >-
+      (installed_version.split('.')[0] != '6')
+      or (expected_version.split('.')[0] != '7')
+      or (routeros_allow_major_upgrade | bool)
+    fail_msg: >-
+      {{ inventory_hostname }} would jump {{ installed_version }} ->
+      {{ expected_version }} (v6 -> v7 major migration). Review the config
+      migration for this device, then pass -e routeros_allow_major_upgrade=true.
+  when: os_upgrade_needed | bool
+
+- name: Upload and apply the .npk package(s)
+  when: os_upgrade_needed | bool
+  block:
+    - name: Locate the .npk package(s) for {{ arch_name }}
+      ansible.builtin.set_fact:
+        npk_files: >-
+          {{ query('fileglob', routeros_npk_source_dir ~ '/' ~ arch_name ~ '/*.npk') | sort }}
+
+    - name: Fail if no .npk files were found for this architecture
+      ansible.builtin.assert:
+        that: npk_files | length > 0
+        fail_msg: >-
+          No .npk files in {{ routeros_npk_source_dir }}/{{ arch_name }}/ for
+          {{ inventory_hostname }} (architecture {{ arch_name }}). Download
+          routeros-{{ routeros_target_version }}-{{ arch_name }}.npk (and any
+          extra packages you use) from mikrotik.com and place them there.
+
+    - name: Fail if none of the .npk files name the target version
+      ansible.builtin.assert:
+        that: npk_files | select('search', routeros_target_version) | list | length > 0
+        fail_msg: >-
+          None of the .npk files in {{ routeros_npk_source_dir }}/{{ arch_name }}/
+          contain '{{ routeros_target_version }}' in their name
+          ({{ npk_files | map('basename') | list | join(', ') }}). Refusing to
+          upload the wrong version to {{ inventory_hostname }}.
+
+    # plain scp from the controller, NOT net_put — net_put wedges the
+    # network_cli session (same lesson as the onboarding play). Uploading to the
+    # device root queues the .npk for install on the next reboot.
+    - name: Upload the target .npk package(s) to the device
+      ansible.builtin.command: >-
+        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+        {{ item }}
+        {{ ansible_user }}@{{ inventory_hostname }}:/{{ item | basename }}
+      delegate_to: localhost
+      loop: "{{ npk_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      changed_when: true
+
+    - name: Reboot to install the uploaded package(s)
+      ansible.builtin.include_tasks: reboot_wait.yml
+      vars:
+        rw_reason: "RouterOS {{ expected_version }} (offline)"
+        rw_trigger_cmds:
+          - '/system reboot'
