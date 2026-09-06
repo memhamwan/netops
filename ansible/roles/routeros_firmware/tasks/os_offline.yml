@@ -79,4 +79,4 @@
       vars:
         rw_reason: "RouterOS {{ expected_version }} (offline)"
         rw_trigger_cmds:
-          - '/system reboot'
+          - ':execute {/system reboot}'

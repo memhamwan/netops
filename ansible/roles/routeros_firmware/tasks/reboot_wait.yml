@@ -3,13 +3,22 @@
 # package reboot, the offline .npk reboot, and the RouterBOARD firmware reboot.
 # Callers pass:
 #   rw_reason        - short label for task names / logs
-#   rw_trigger_cmds  - the command(s) that cause the reboot
+#   rw_trigger_cmds  - the command(s) that cause the reboot. Callers use
+#                      `:execute {/system reboot}`, NOT plain `/system reboot`:
+#                      over network_cli the bare command hits RouterOS's
+#                      interactive "Dangerous! Reboot anyway? [y/N]" prompt and
+#                      never reboots. :execute runs it in script context (no
+#                      prompt), so the device actually reboots.
 #
 # The download (online) or upload (offline) has already happened by the time we
 # get here, so the reboot itself is quick and the port cleanly drops then
 # returns — which is what the wait_for pair below keys off. wait_for runs on the
 # controller (delegate_to: localhost); on a real run that is rpi.sco, which
 # reaches every device over the routed network.
+#
+# NOTE: "reset_connection task does not support when conditional" is emitted when
+# this file is included from a when-guarded block — the meta task ignores the
+# when and always runs, which is exactly what we want. Harmless.
 
 - name: "Trigger reboot — {{ rw_reason }}"
   community.routeros.command:

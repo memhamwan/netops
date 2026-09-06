@@ -37,4 +37,4 @@
       vars:
         rw_reason: "RouterBOARD firmware {{ rb_upgrade_fw }}"
         rw_trigger_cmds:
-          - '/system reboot'
+          - ':execute {/system reboot}'
