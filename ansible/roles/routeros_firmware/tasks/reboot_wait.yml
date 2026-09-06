@@ -1,0 +1,59 @@
+---
+# Reboot one device and block until RouterOS is answering again. Reused for the
+# package reboot, the offline .npk reboot, and the RouterBOARD firmware reboot.
+# Callers pass:
+#   rw_reason        - short label for task names / logs
+#   rw_trigger_cmds  - the command(s) that cause the reboot
+#
+# The download (online) or upload (offline) has already happened by the time we
+# get here, so the reboot itself is quick and the port cleanly drops then
+# returns — which is what the wait_for pair below keys off. wait_for runs on the
+# controller (delegate_to: localhost); on a real run that is rpi.sco, which
+# reaches every device over the routed network.
+
+- name: "Trigger reboot — {{ rw_reason }}"
+  community.routeros.command:
+    commands: "{{ rw_trigger_cmds }}"
+  changed_when: true
+  # rebooting tears down our SSH session, so the module often reports a closed
+  # connection here — that is expected. Recovery is proven by the waits below.
+  failed_when: false
+
+- name: "Wait for the device to drop — {{ rw_reason }}"
+  ansible.builtin.wait_for:
+    host: "{{ inventory_hostname }}"
+    port: "{{ ansible_port | default(222) }}"
+    state: stopped
+    timeout: "{{ routeros_reboot_down_timeout }}"
+  delegate_to: localhost
+  # A very fast reboot can drop and return before we look; the return-wait plus
+  # the version assertion are the real gates, so a missed drop is not fatal.
+  failed_when: false
+
+- name: "Wait for SSH to return — {{ rw_reason }}"
+  ansible.builtin.wait_for:
+    host: "{{ inventory_hostname }}"
+    port: "{{ ansible_port | default(222) }}"
+    state: started
+    delay: 5
+    timeout: "{{ routeros_reboot_timeout }}"
+  delegate_to: localhost
+
+- name: "Reset the network_cli session onto the rebooted device — {{ rw_reason }}"
+  ansible.builtin.meta: reset_connection
+
+- name: "Let RouterOS settle — {{ rw_reason }}"
+  ansible.builtin.pause:
+    seconds: "{{ routeros_post_reboot_delay }}"
+
+# SSH accepting a socket does not mean the CLI is ready to answer; poll a
+# trivial command until it does before the caller reads versions off the device.
+- name: "Wait for the RouterOS CLI to answer — {{ rw_reason }}"
+  community.routeros.command:
+    commands:
+      - ':put [/system identity get name]'
+  register: rw_ready
+  until: rw_ready is not failed and (rw_ready.stdout | default([]) | length > 0)
+  retries: 20
+  delay: 6
+  changed_when: false

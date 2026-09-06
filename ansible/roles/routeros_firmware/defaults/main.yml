@@ -1,0 +1,41 @@
+---
+# DRAFT — this role has never been executed against a device. See role README
+# and the review gate in playbooks/routeros_firmware.yml.
+
+# Update channel used when upgrading to "latest" (routeros_target_version unset).
+# MikroTik channels: long-term, stable, testing, development.
+routeros_update_channel: stable
+
+# Pin an exact end-state version, e.g. "7.24.1". Empty ("") means "whatever the
+# channel currently publishes". When set, it is the version the run REQUIRES:
+#  - online mode refuses to reboot unless the channel actually offers it
+#    (so we never reboot toward a version we cannot reach), and
+#  - the final check asserts the running version equals it, failing the run
+#    (any_errors_fatal) otherwise.
+# The only way to force a version the channel is NOT currently serving (an older
+# version, or catching a v6 box up to a chosen v7) is the offline .npk path —
+# set routeros_npk_source_dir below.
+routeros_target_version: ""
+
+# After the RouterOS package is on the target version, bring the RouterBOARD
+# firmware (bootloader) in line with `/system routerboard upgrade` (a second
+# reboot). Non-RouterBOARD hardware (CHR/x86) is detected and skipped.
+routeros_upgrade_routerboard: true
+
+# Crossing v6 -> v7 is a major migration (config semantics change; MikroTik
+# advises intermediate steps and a fresh look at the config). This role will
+# refuse it unless you opt in explicitly, per device, after review.
+routeros_allow_major_upgrade: false
+
+# Offline upgrade: a directory on the CONTROLLER holding .npk packages laid out
+# as <routeros_npk_source_dir>/<architecture-name>/*.npk (architecture-name is
+# read from the device, e.g. arm, arm64, mipsbe, mmips, tile). When set, the
+# matching .npk files are uploaded and the device is rebooted to apply them —
+# routeros_target_version is then mandatory and is the asserted end state.
+routeros_npk_source_dir: ""
+
+# Timeouts (seconds). Radio backhauls are slow; be generous.
+routeros_download_timeout: 900      # download the package over the air
+routeros_reboot_timeout: 900        # wait for the device to answer SSH again
+routeros_reboot_down_timeout: 120   # observe it drop after we issue the reboot
+routeros_post_reboot_delay: 30      # let RouterOS finish coming up before probing

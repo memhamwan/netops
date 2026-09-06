@@ -1,0 +1,75 @@
+---
+# Firmware upgrade topology — who is behind whom on the wireless chains.
+#
+# SOURCE: RoMON neighbor discovery from the SCO core (r1.sco), captured
+# 2026-09-05. `fw_depth` is the RoMON HOPS count from the core (r1.sco = 0);
+# `fw_parent` is the immediate upstream neighbor toward the core ('core' =
+# r1.sco itself). Only documentation — the run orders purely on fw_depth.
+#
+# WHY THIS EXISTS: the network is a set of linear chains. Upgrading a device
+# reboots it, and everything BEHIND it (further from the core) goes dark until
+# it returns. So routeros_firmware.yml upgrades DEEPEST FIRST (highest fw_depth),
+# one device at a time: each reboot only drops the device itself — never a device
+# still ahead of us in the run — and by the time we reach a hub every device
+# behind it is already done, so its reboot's blast radius is already-upgraded
+# gear we no longer need to reach. The core (r1.sco, depth 0) reboots the whole
+# fleet, so it goes last.
+#
+# REFRESHING (do this before any campaign — dishes get re-aimed, links change):
+#   1. From a RouterOS box with RoMON, or the collector, run the RoMON
+#      neighbour discovery from the core, e.g. on r1.sco:
+#        /tool romon; :put [/tool romon board]     # confirm you are at the core
+#        /system routerboard print                  # sanity
+#      then discover:  Tools > RoMON > (Winbox), or CLI:
+#        /tool romon print   and   the RoMON neighbour list (HOPS/PATH columns).
+#   2. fw_depth = the HOPS value for each device. fw_parent = the identity of
+#      the second-to-last MAC in that device's PATH (the last hop before it).
+#   3. Map RoMON *identity* -> inventory hostname. Identities can lag inventory
+#      until routeros_baseline's identity enforcement runs — e.g. the device
+#      whose RoMON identity is still 'leb.hil' is inventory host sco.hil (the
+#      re-aimed ex-leb.hil dish, per inventory/hosts.yml).
+#   4. Update the entries below via PR.
+#
+# COVERAGE: this snapshot is the SCO/FTN/HIL/MNO RoMON domain. Other sites
+# (atl, azo, mch, ret, and the leb.* site group) were not in the snapshot —
+# they reach the core over routed (L3) links RoMON did not cross here. They have
+# NO entry on purpose: the playbook refuses to upgrade any host it cannot place
+# in a chain. Map them (or scope the run with -l) before upgrading them.
+
+firmware_topology:
+  # depth 7 — MNO tower tail, behind r2.mno
+  sec3.mno.memhamwan.net: {fw_depth: 7, fw_parent: r2.mno.memhamwan.net}
+  # (RoMON also shows sec2.mno at depth 7 on 6.49.4 — not in inventory, so not listed)
+
+  # depth 6 — off the MNO hub (hil.mno)
+  r2.mno.memhamwan.net: {fw_depth: 6, fw_parent: hil.mno.memhamwan.net}
+  r1.mno.memhamwan.net: {fw_depth: 6, fw_parent: hil.mno.memhamwan.net}
+  ap1.mno.memhamwan.net: {fw_depth: 6, fw_parent: hil.mno.memhamwan.net}
+  leb.mno.memhamwan.net: {fw_depth: 6, fw_parent: hil.mno.memhamwan.net}
+
+  # depth 5 — MNO end of the HIL<->MNO backhaul
+  hil.mno.memhamwan.net: {fw_depth: 5, fw_parent: mno.hil.memhamwan.net}
+
+  # depth 4
+  mno.hil.memhamwan.net: {fw_depth: 4, fw_parent: r2.hil.memhamwan.net}  # HIL end of the HIL<->MNO backhaul
+  r1.hil.memhamwan.net: {fw_depth: 4, fw_parent: r2.hil.memhamwan.net}
+  r1.ftn.memhamwan.net: {fw_depth: 4, fw_parent: sco.ftn.memhamwan.net}
+
+  # depth 3
+  r2.hil.memhamwan.net: {fw_depth: 3, fw_parent: sco.hil.memhamwan.net}
+  sco.ftn.memhamwan.net: {fw_depth: 3, fw_parent: ftn.sco.memhamwan.net}  # FTN end of the SCO<->FTN backhaul
+
+  # depth 2
+  sco.hil.memhamwan.net: {fw_depth: 2, fw_parent: hil.sco.memhamwan.net}  # RoMON identity still 'leb.hil' (re-aimed dish)
+  ftn.sco.memhamwan.net: {fw_depth: 2, fw_parent: r2.sco.memhamwan.net}  # SCO end of the SCO<->FTN backhaul
+
+  # depth 1 — one hop off the SCO core
+  hil.sco.memhamwan.net: {fw_depth: 1, fw_parent: core}  # SCO end of the SCO<->HIL backhaul
+  r2.sco.memhamwan.net: {fw_depth: 1, fw_parent: core}
+  sec1.sco.memhamwan.net: {fw_depth: 1, fw_parent: core}
+  sec3.sco.memhamwan.net: {fw_depth: 1, fw_parent: core}
+  # (leb.sco is depth 1 too but is in the inventory 'down' group — excluded)
+
+  # depth 0 — the core itself. Rebooting it darkens the entire fleet, so it is
+  # ALWAYS upgraded last. Include it only in a full-fleet campaign.
+  r1.sco.memhamwan.net: {fw_depth: 0, fw_parent: core}

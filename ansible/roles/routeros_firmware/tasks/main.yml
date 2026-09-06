@@ -1,0 +1,54 @@
+---
+# DRAFT — never executed against a device. Review gate: see role README and the
+# execution gate in playbooks/routeros_firmware.yml.
+#
+# Upgrades ONE RouterOS device (the playbook drives serial: 1 in topological
+# order). Idempotent: a device already on the expected version and RouterBOARD
+# firmware is left untouched — no reboot.
+
+- name: Read current firmware state
+  community.routeros.command:
+    commands:
+      - ':put [/system resource get version]'
+      - ':put [/system routerboard get current-firmware]'
+      - ':put [/system routerboard get upgrade-firmware]'
+      - ':put [/system routerboard get routerboard]'
+      - ':put [/system resource get architecture-name]'
+  register: pre
+  changed_when: false
+
+- name: Record current state
+  ansible.builtin.set_fact:
+    # `/system resource get version` reads like "7.24.1 (stable)" — take the number
+    installed_version: "{{ (pre.stdout[0] | default('')).split(' ') | first | trim }}"
+    rb_current_fw: "{{ pre.stdout[1] | default('') | trim }}"
+    rb_upgrade_fw: "{{ pre.stdout[2] | default('') | trim }}"
+    is_routerboard: "{{ (pre.stdout[3] | default('false') | trim) == 'true' }}"
+    arch_name: "{{ pre.stdout[4] | default('') | trim }}"
+
+- name: Report the current state and plan for this device
+  ansible.builtin.debug:
+    msg: >-
+      installed={{ installed_version }}
+      routerboard={{ is_routerboard }}
+      rb_current={{ rb_current_fw }}
+      mode={{ 'offline' if (routeros_npk_source_dir | length > 0) else 'online:' ~ routeros_update_channel }}
+      target={{ routeros_target_version if (routeros_target_version | length > 0) else 'latest' }}
+
+# --- RouterOS package: online channel, or offline .npk upload ---
+- name: RouterOS package upgrade (offline .npk)
+  ansible.builtin.include_tasks: os_offline.yml
+  when: routeros_npk_source_dir | length > 0
+
+- name: RouterOS package upgrade (online channel)
+  ansible.builtin.include_tasks: os_online.yml
+  when: routeros_npk_source_dir | length == 0
+
+# --- RouterBOARD firmware (bootloader), after the OS is on the target ---
+- name: RouterBOARD firmware upgrade
+  ansible.builtin.include_tasks: routerboard.yml
+  when: (routeros_upgrade_routerboard | bool) and (is_routerboard | bool)
+
+# --- Prove the end state (fails the run on mismatch) ---
+- name: Verify the expected version
+  ansible.builtin.include_tasks: verify.yml
