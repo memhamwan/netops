@@ -26,6 +26,11 @@ dns_servers:
   - 1.1.1.1              # off-network fallback (Cloudflare)
   - 1.0.0.1
 
+# Routers must not be open DNS resolvers on AMPRNet (amplification risk); client
+# DNS lives on the site_services resolvers. Override per-device (inventory /
+# group_vars) only for a box that genuinely serves DNS to local clients.
+dns_allow_remote_requests: false
+
 syslog_topics: [system, error, warning, critical, account]
 
 # users the fleet is EXPECTED to have; anything else is reported by audit.yml

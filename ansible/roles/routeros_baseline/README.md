@@ -23,7 +23,9 @@ runs over the RouterOS API (`api_modify`) and only corrects what exists:
 - NTP with `time.cloudflare.com` fallback (fleet drifts when LEB is dark)
 - DNS resolvers (`/ip dns servers`): internal anycast + Cloudflare fallback —
   some devices ship with none set (e.g. r2.sco), which breaks on-box name
-  resolution including `/system package update`
+  resolution including `/system package update`. `allow-remote-requests=false`
+  (routers aren't open resolvers; override `dns_allow_remote_requests` per device
+  if one truly serves local clients)
 - FQDN identity enforcement
 - user audit (report-only — never deletes)
 
