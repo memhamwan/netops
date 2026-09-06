@@ -1,0 +1,18 @@
+---
+# Point the device's resolver at the network DNS. Several devices ship with an
+# empty `/ip dns servers` (seen on r2.sco), which breaks anything that resolves
+# names on-box — including `/system package update` (firmware upgrades) and the
+# NTP hostname fallback. Convergent single-value set, mirroring ntp.yml.
+#
+# allow-remote-requests defaults to false: routers must not be open DNS
+# resolvers on AMPRNet (amplification risk) — client DNS is served by the
+# site_services resolvers, not the routers. This only stops the device answering
+# OTHERS; it still resolves for itself, so firmware/NTP lookups are unaffected.
+# A device that legitimately serves DNS to local clients can override with
+# dns_allow_remote_requests=true (e.g. via inventory/group_vars).
+- name: Configure DNS resolvers with off-network fallback
+  community.routeros.api_modify:
+    path: ip dns
+    data:
+      - servers: "{{ dns_servers | join(',') }}"
+        allow-remote-requests: "{{ dns_allow_remote_requests | bool }}"

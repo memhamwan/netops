@@ -8,6 +8,8 @@
   ansible.builtin.import_tasks: logging.yml
 - name: NTP
   ansible.builtin.import_tasks: ntp.yml
+- name: DNS resolvers
+  ansible.builtin.import_tasks: dns.yml
 - name: FQDN identity
   ansible.builtin.import_tasks: identity.yml
 - name: User audit (report-only)

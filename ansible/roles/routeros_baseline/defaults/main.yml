@@ -15,6 +15,22 @@ ntp_servers:
   - 162.159.200.1
   - 162.159.200.123
 
+# Resolver the device points `/ip dns` at. The two internal anycast resolvers
+# first (same ones linux_baseline puts in resolv.conf), then Cloudflare as an
+# off-network fallback — same LEB-outage reasoning as the NTP list: if the
+# internal DNS is unreachable, on-box lookups (`/system package update`, NTP
+# hostname fallback) still resolve. RouterOS queries them in order.
+dns_servers:
+  - 44.34.132.1          # anycast resolver (site_services)
+  - 44.34.133.1          # anycast resolver (site_services)
+  - 1.1.1.1              # off-network fallback (Cloudflare)
+  - 1.0.0.1
+
+# Routers must not be open DNS resolvers on AMPRNet (amplification risk); client
+# DNS lives on the site_services resolvers. Override per-device (inventory /
+# group_vars) only for a box that genuinely serves DNS to local clients.
+dns_allow_remote_requests: false
+
 syslog_topics: [system, error, warning, critical, account]
 
 # users the fleet is EXPECTED to have; anything else is reported by audit.yml
