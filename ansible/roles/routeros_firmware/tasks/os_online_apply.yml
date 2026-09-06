@@ -1,0 +1,104 @@
+---
+# APPLY phase (online): expected_version was selected in the check phase; now
+# download the package and reboot into it. This is the bandwidth-heavy, serial,
+# deepest-first part — it runs one device at a time (see the playbook) so lossy
+# shared radio backhauls are never asked to carry two downloads at once.
+#
+# Included only when os_upgrade_needed, so there is no "already on target" guard
+# here — that decision was made and reported in os_online_check.yml.
+#
+# PRE-STAGED MODE (routeros_prestaged=true): on the thinnest links the device's
+# own download saturates the backhaul and starves this control session. For
+# those, the operator downloads the package by hand (`/system package update
+# download` in a terminal, watched to completion) and re-runs with
+# routeros_prestaged=true — this play then never downloads: it requires the
+# package to be staged already and goes straight to the reboot.
+
+# The check phase restores each device's original channel (it must be
+# non-mutating for pruned devices), so set the requested channel here — this is
+# the device that is actually upgrading, and the download pulls from the
+# configured channel. Enforce HTTPS + certificate validation before the download.
+- name: Set the update channel and enforce HTTPS transport before download
+  community.routeros.command:
+    commands:
+      - '/system package update set channel={{ routeros_update_channel }} mode=https check-certificate=yes'
+  changed_when: false
+
+- name: Check whether the package is already downloaded
+  community.routeros.command:
+    commands:
+      - ':put [/system package update get status]'
+  register: fw_status0
+  changed_when: false
+
+- name: Note whether the package is staged ("Downloaded, please reboot ...")
+  ansible.builtin.set_fact:
+    # RouterOS holds a downloaded package across sessions, so a device staged by
+    # a previous run — or by the operator, by hand — is detected here.
+    _dl_staged: "{{ (((fw_status0.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first) is search('(?i)reboot') }}"
+
+# Pre-staged mode: refuse to download, and refuse to reboot a device that isn't
+# actually staged — tell the operator exactly what to do instead.
+- name: Require a hand-staged package when routeros_prestaged is set
+  ansible.builtin.assert:
+    that: _dl_staged | bool
+    fail_msg: >-
+      routeros_prestaged=true but {{ inventory_hostname }} has no package staged
+      (status is not "Downloaded, please reboot"). Download {{ expected_version }}
+      on the device by hand first — in a RouterOS terminal:
+      `/system package update set channel={{ routeros_update_channel }} mode=https check-certificate=yes;
+      /system package update download` — wait for "Downloaded, please reboot",
+      then re-run. Not rebooting.
+  when: routeros_prestaged | default(false) | bool
+
+# Do NOT reuse a pre-existing staged package in normal mode: RouterOS does not
+# report the staged package's version (`get status` only says "Downloaded, please
+# reboot") and check-for-updates does not replace it, so a stale stage from an
+# earlier/different target could reboot the device onto the wrong version and
+# only surface at the final verify. Cancel it and download fresh — the download
+# pulls expected_version (the check phase asserted the channel serves it).
+# Pre-staged mode is the exception: it deliberately trusts the operator's
+# hand-staged package, with verify.yml as the version safety net.
+- name: Cancel any pre-existing staged package (avoid rebooting a stale version)
+  community.routeros.command:
+    commands:
+      - '/system package update cancel'
+  when:
+    - not (routeros_prestaged | default(false) | bool)
+    - _dl_staged | bool
+  changed_when: true
+  # nothing staged / nothing to cancel must not abort the run
+  failed_when: false
+
+- name: Download the RouterOS package
+  when: not (routeros_prestaged | default(false) | bool)
+  block:
+    # Retry the download: over lossy radio links a lookup or transfer can
+    # transiently fail (seen on r1.hil: "could not resolve dns name (timeout)"
+    # even though check-for-updates resolved fine moments earlier). Each attempt
+    # sets download_ok on success; the loop stops once it is true.
+    - name: Download the RouterOS package (retry transient failures)
+      ansible.builtin.include_tasks: download_once.yml
+      loop: "{{ range(1, (routeros_download_attempts | int) + 1) | list }}"
+      loop_control:
+        loop_var: dl_attempt
+      when: not (download_ok | default(false))
+
+    - name: Fail if the package never downloaded
+      ansible.builtin.assert:
+        that: download_ok | default(false)
+        fail_msg: >-
+          {{ inventory_hostname }} could not download {{ expected_version }}
+          after {{ routeros_download_attempts }} attempts (last status:
+          '{{ dl_status_text | default('unknown') }}'). Likely a thin/lossy link
+          or DNS on the device — check /ip dns and the link. For a thin link,
+          download the package on the device by hand and re-run with
+          -e routeros_prestaged=true, or stage the .npk offline
+          (routeros_npk_source_dir).
+
+- name: Reboot into the new RouterOS package
+  ansible.builtin.include_tasks: reboot_wait.yml
+  vars:
+    rw_reason: "RouterOS {{ expected_version }}"
+    rw_trigger_cmds:
+      - ':execute {/system reboot}'

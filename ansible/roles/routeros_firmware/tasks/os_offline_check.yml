@@ -1,0 +1,37 @@
+---
+# CHECK phase (offline): decide whether the pinned target differs from what is
+# installed, WITHOUT uploading anything or rebooting. Sets expected_version and
+# os_upgrade_needed. The .npk upload + reboot are deferred to os_offline_apply.yml
+# in the serial phase (the upload is the bandwidth-heavy part).
+
+- name: Offline upgrade requires a pinned target version
+  ansible.builtin.assert:
+    that: routeros_target_version | length > 0
+    fail_msg: >-
+      routeros_npk_source_dir is set (offline mode) but routeros_target_version
+      is empty. Offline upgrades install specific .npk files, so name the version
+      you are installing: -e routeros_target_version=7.24.1
+
+- name: Establish the expected end-state version
+  ansible.builtin.set_fact:
+    expected_version: "{{ routeros_target_version }}"
+    os_upgrade_needed: "{{ installed_version != routeros_target_version }}"
+
+- name: Report that the RouterOS package is already on target
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} already on {{ installed_version }}; no offline upgrade needed."
+  when: not (os_upgrade_needed | bool)
+
+# Fail-fast in the parallel check phase: a v6 box is caught before any device in
+# the campaign reboots, not partway through the serial run.
+- name: Refuse an unintended v6 -> v7 major jump
+  ansible.builtin.assert:
+    that: >-
+      (installed_version.split('.')[0] != '6')
+      or (expected_version.split('.')[0] != '7')
+      or (routeros_allow_major_upgrade | bool)
+    fail_msg: >-
+      {{ inventory_hostname }} would jump {{ installed_version }} ->
+      {{ expected_version }} (v6 -> v7 major migration). Review the config
+      migration for this device, then pass -e routeros_allow_major_upgrade=true.
+  when: os_upgrade_needed | bool

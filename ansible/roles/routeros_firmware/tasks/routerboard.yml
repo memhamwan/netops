@@ -1,0 +1,49 @@
+---
+# Bring the RouterBOARD firmware (bootloader) in line with the running RouterOS
+# version. After the package upgrade + reboot, `upgrade-firmware` reflects the
+# new RouterOS version while `current-firmware` still shows the old bootloader;
+# `/system routerboard upgrade` writes it and it takes effect on the next reboot.
+
+- name: Re-read RouterBOARD firmware state
+  community.routeros.command:
+    commands:
+      - ':put [/system routerboard get current-firmware]'
+      - ':put [/system routerboard get upgrade-firmware]'
+  register: rb
+  changed_when: false
+
+- name: Record RouterBOARD firmware versions
+  ansible.builtin.set_fact:
+    # strip wrapped-echo lines, take the real value (RouterOS wraps echoed :put)
+    rb_current_fw: "{{ ((rb.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+    rb_upgrade_fw: "{{ ((rb.stdout_lines[1] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+
+- name: Report that the RouterBOARD firmware is already current
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} RouterBOARD firmware {{ rb_current_fw }} matches available {{ rb_upgrade_fw }}."
+  when: rb_current_fw == rb_upgrade_fw
+
+- name: Upgrade RouterBOARD firmware and reboot
+  when: rb_current_fw != rb_upgrade_fw
+  block:
+    - name: Write the new RouterBOARD firmware
+      community.routeros.command:
+        commands:
+          # :execute runs it in script context — no interactive "y/N" prompt
+          # (same reason as reboot). It just flips the bootloader config (the
+          # flash image is already present), a second or two.
+          - ':execute {/system routerboard upgrade}'
+      changed_when: true
+
+    # :execute returns immediately; give the quick config write a moment to land
+    # before we reboot to apply it.
+    - name: Let the RouterBOARD firmware write settle
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Reboot to apply the RouterBOARD firmware
+      ansible.builtin.include_tasks: reboot_wait.yml
+      vars:
+        rw_reason: "RouterBOARD firmware {{ rb_upgrade_fw }}"
+        rw_trigger_cmds:
+          - ':execute {/system reboot}'

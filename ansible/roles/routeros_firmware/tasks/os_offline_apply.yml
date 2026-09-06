@@ -1,0 +1,68 @@
+---
+# APPLY phase (offline): upload the .npk package(s) for the pinned target and
+# reboot to apply them. This is the bandwidth-heavy, serial, deepest-first part —
+# one device at a time (see the playbook), so a shared radio backhaul never
+# carries two uploads at once.
+#
+# Included only when os_upgrade_needed, so there is no "already on target" guard
+# here — that decision was made and reported in os_offline_check.yml.
+
+- name: Locate the .npk package(s) for {{ arch_name }}
+  ansible.builtin.set_fact:
+    npk_files: >-
+      {{ query('fileglob', routeros_npk_source_dir ~ '/' ~ arch_name ~ '/*.npk') | sort }}
+
+- name: Fail if no .npk files were found for this architecture
+  ansible.builtin.assert:
+    that: npk_files | length > 0
+    fail_msg: >-
+      No .npk files in {{ routeros_npk_source_dir }}/{{ arch_name }}/ for
+      {{ inventory_hostname }} (architecture {{ arch_name }}). Download
+      routeros-{{ routeros_target_version }}-{{ arch_name }}.npk (and any
+      extra packages you use) from mikrotik.com and place them there.
+
+# Match the version bounded by '-' on both sides — filenames are
+# routeros-<version>-<arch>.npk (and extra-package-<version>-<arch>.npk) — so a
+# target of 7.24.1 never matches routeros-7.24.10-arm.npk. regex_escape keeps the
+# dots literal. Both the assertion below AND the upload loop use this filtered
+# list, so only exact-version packages are ever uploaded.
+- name: Select the .npk file(s) whose name carries the exact target version
+  ansible.builtin.set_fact:
+    npk_target_files: >-
+      {{ npk_files | select('search', '-' ~ (routeros_target_version | regex_escape) ~ '-') | list }}
+
+- name: Fail if no .npk file matches the exact target version
+  ansible.builtin.assert:
+    that: npk_target_files | length > 0
+    fail_msg: >-
+      No .npk file in {{ routeros_npk_source_dir }}/{{ arch_name }}/ names the
+      exact version {{ routeros_target_version }}
+      (found: {{ npk_files | map('basename') | list | join(', ') }}). Refusing to
+      upload the wrong version to {{ inventory_hostname }}.
+
+# plain scp from the controller, NOT net_put — net_put wedges the network_cli
+# session (same lesson as the onboarding play). Uploading to the device root
+# queues the .npk for install on the next reboot.
+# Bound the transfer: on a radio link that black-holes mid-upload, an unbounded
+# scp would block the serial campaign until the OS tears down the TCP session.
+# ConnectTimeout caps the initial connect; ServerAlive* (15s × 8 ≈ 120s) aborts
+# a stalled transfer instead of hanging.
+- name: Upload the target .npk package(s) to the device
+  ansible.builtin.command: >-
+    scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes
+    -o ConnectTimeout={{ routeros_connect_timeout | default(120) }}
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=8
+    {{ item }}
+    {{ ansible_user }}@{{ inventory_hostname }}:/{{ item | basename }}
+  delegate_to: localhost
+  loop: "{{ npk_target_files }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  changed_when: true
+
+- name: Reboot to install the uploaded package(s)
+  ansible.builtin.include_tasks: reboot_wait.yml
+  vars:
+    rw_reason: "RouterOS {{ expected_version }} (offline)"
+    rw_trigger_cmds:
+      - ':execute {/system reboot}'
