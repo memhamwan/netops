@@ -32,17 +32,49 @@
     validate: unbound-checkconf %s
   notify: restart unbound
 
-# Rendered from the inventory (device A/PTR from `ip:`) plus
-# inventory/dns_extra_records.yml — identical on every service host. The
-# checksum of this file is exported as a metric so a host that missed a
-# deploy shows up as zone skew rather than as silently different answers.
-- name: Render internal zone data from inventory
-  ansible.builtin.template:
-    src: unbound-local-zone.conf.j2
-    dest: /etc/unbound/unbound.conf.d/netops-zone.conf
-    mode: "0644"
-    validate: unbound-checkconf %s
-  notify: restart unbound
+# Internal-zone resolution, two mutually exclusive modes (see
+# docs/dns-authority-design.md):
+#   • NSD off (default): unbound answers the internal zone itself from
+#     local-data rendered from inventory + dns_extra_records.yml — identical on
+#     every service host. The checksum of this file is exported as a metric so
+#     a host that missed a deploy shows as zone skew, not as silently different
+#     answers.
+#   • NSD on: unbound resolves the internal zone via a stub-zone to the local
+#     authoritative NSD (127.0.0.1@{{ nsd_stub_port }}); the local-data file is
+#     removed so NSD's zonefile is the single source of truth.
+- name: Internal zone via unbound local-data (NSD off)
+  when: not (nsd_enabled | bool)
+  block:
+    - name: Render internal zone data from inventory
+      ansible.builtin.template:
+        src: unbound-local-zone.conf.j2
+        dest: /etc/unbound/unbound.conf.d/netops-zone.conf
+        mode: "0644"
+        validate: unbound-checkconf %s
+      notify: restart unbound
+
+    - name: Remove any stub-zone config (NSD is off)
+      ansible.builtin.file:
+        path: /etc/unbound/unbound.conf.d/netops-stub.conf
+        state: absent
+      notify: restart unbound
+
+- name: Internal zone via stub-zone to the local NSD (NSD on)
+  when: nsd_enabled | bool
+  block:
+    - name: Install unbound stub-zone -> local NSD
+      ansible.builtin.template:
+        src: unbound-stub.conf.j2
+        dest: /etc/unbound/unbound.conf.d/netops-stub.conf
+        mode: "0644"
+        validate: unbound-checkconf %s
+      notify: restart unbound
+
+    - name: Remove the local-data zone (NSD is authoritative now)
+      ansible.builtin.file:
+        path: /etc/unbound/unbound.conf.d/netops-zone.conf
+        state: absent
+      notify: restart unbound
 
 - name: Enable unbound
   ansible.builtin.systemd:

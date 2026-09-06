@@ -1,0 +1,42 @@
+; RENDERED by the netops site_services role from ansible/inventory/hosts.yml
+; and ansible/inventory/dns_extra_records.yml — do not edit on the host.
+;
+; The authoritative forward zone, rendered identically onto every service host
+; ("git is the cluster" — no AXFR, no primary). The health script exports a
+; checksum of this file, so a host that missed a deploy shows up as zone skew
+; rather than as silently different answers.
+;
+; SERIAL is derived from the record content: identical across hosts for
+; identical content, and it changes whenever the content changes. There is no
+; secondary pulling this zone by serial (no AXFR), so strict monotonicity is
+; not required here — the serial exists to reflect content, not to drive a
+; transfer. (The DNSSEC/cutover PR revisits this when signing enters the
+; pipeline — see docs/dns-authority-design.md.)
+$ORIGIN {{ dns_zone }}.
+$TTL {{ dns_zone_ttl }}
+{% set body %}
+; ── Nameservers (their A records become the registrar glue at delegation) ──
+{% for ns_rec in dns_ns_records %}
+{{ ns_rec.name }} IN A {{ ns_rec.ip }}
+{% endfor %}
+; ── Fleet devices (from the inventory `ip:` fields; down hosts excluded) ──
+{% for host in groups['all'] | sort %}
+{% if hostvars[host].ip is defined and host not in (groups['down'] | default([])) %}
+{{ host }}. IN A {{ hostvars[host].ip }}
+{% endif %}
+{% endfor %}
+; ── Extra records (inventory/dns_extra_records.yml) ──
+{% for record in dns_extra_records | default([]) %}
+{{ record.name }}. {{ record.ttl | default(dns_zone_ttl) }} IN {{ record.type }} {{ record.value }}
+{% endfor %}
+{% endset %}
+@ IN SOA ns1.{{ dns_zone }}. {{ dns_soa_rname }} (
+    {{ (body | hash('md5'))[:8] | int(0, 16) }} ; serial (content hash)
+    {{ dns_soa_refresh }} ; refresh
+    {{ dns_soa_retry }} ; retry
+    {{ dns_soa_expire }} ; expire
+    {{ dns_soa_negative_ttl }} ) ; negative TTL
+{% for ns_rec in dns_ns_records %}
+@ IN NS {{ ns_rec.name }}.{{ dns_zone }}.
+{% endfor %}
+{{ body }}

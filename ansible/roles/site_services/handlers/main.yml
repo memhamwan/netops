@@ -18,6 +18,14 @@
     name: chrony
     state: restarted
 
+# NSD serves zones from file (no inline signing, no AXFR), so a restart is
+# cheap and safe — there is no adjacency to drop as with frr. Config and
+# zonefiles are nsd-checkconf-validated before the handler can fire.
+- name: restart nsd
+  ansible.builtin.systemd:
+    name: nsd
+    state: restarted
+
 # frr reloads its integrated config without dropping adjacencies; a restart
 # would tear down OSPF and withdraw every announcement for the dead-interval.
 - name: reload frr

@@ -49,7 +49,12 @@ jobs:
       # The health script decides when a service address is withdrawn; a
       # quoting bug there is a routing bug.
       - name: shellcheck the rendered health script
-        run: shellcheck -s sh ansible/build/rendered/site-services/anycast-health.sh
+        # Both switch positions: the default script and the nsd_enabled variant,
+        # which adds the AUTHDNS_IPS branches. ci_render.yml renders both.
+        run: >
+          shellcheck -s sh
+          ansible/build/rendered/site-services/anycast-health.sh
+          ansible/build/rendered/site-services/anycast-health.sh.nsd-on
 
       - name: promtool check rules
         run: >
