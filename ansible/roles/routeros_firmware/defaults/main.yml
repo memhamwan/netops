@@ -38,6 +38,16 @@ routeros_npk_source_dir: ""
 # links transiently fail DNS/transfer, so retrying beats aborting the campaign.
 routeros_download_attempts: 3
 
+# Pre-staged mode. On the thinnest links the device's own download saturates the
+# backhaul and starves the control session (the status poll times out). For
+# those devices, download the package BY HAND on the device (`/system package
+# update download`, watched to completion) and re-run with
+# routeros_prestaged=true: the apply phase then never downloads — it requires the
+# package to be staged already ("Downloaded, please reboot") and goes straight to
+# the reboot, failing with clear guidance if it isn't staged. Online mode only;
+# for offline .npk staging use routeros_npk_source_dir instead.
+routeros_prestaged: false
+
 # Timeouts (seconds). Radio backhauls are slow; be generous.
 routeros_download_timeout: 900      # download the package over the air
 routeros_reboot_timeout: 900        # wait for the device to answer SSH again

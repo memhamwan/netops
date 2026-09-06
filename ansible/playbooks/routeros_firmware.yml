@@ -75,9 +75,23 @@
 #   -e routeros_download_attempts=6     # download retries per device (default 3)
 #   -e routeros_download_timeout=1800   # seconds per attempt   (default 900)
 #   -e routeros_connect_timeout=180     # SSH connect patience  (default 120)
-# If downloads keep timing out on a device, it is almost always DNS on the box
-# (`/ip dns print` empty) — fix DNS fleet-wide first (routeros_baseline /
-# site_services), or stage the .npk offline (routeros_npk_source_dir).
+# If downloads keep timing out on a device, it is almost always one of:
+#   - no DNS on the box (`/ip dns print` empty) — fix DNS fleet-wide first
+#     (routeros_baseline / site_services); or
+#   - a link too thin to carry the download AND keep this control session
+#     responsive (the status poll times out even though the download runs). For
+#     those, download the package BY HAND on the device and let the playbook do
+#     only the safe part (the ordered reboot):
+#       # in a RouterOS terminal on the device:
+#       /system package update set channel=stable
+#       /system package update download        # watch it reach "Downloaded, please reboot"
+#       # then, from here:
+#       ansible-playbook playbooks/routeros_firmware.yml -e confirm_execution=true \
+#         -l r2.hil.memhamwan.net -e routeros_prestaged=true
+#     With routeros_prestaged=true the apply phase never downloads — it requires
+#     the package already staged and goes straight to reboot + verify (and fails
+#     with clear guidance if it isn't staged). Or stage the .npk offline
+#     (routeros_npk_source_dir), which uploads from the controller instead.
 #
 # SAFETY NOTE: the CHECK play is all-or-nothing. If any in-scope device cannot
 # be assessed (unreachable, no DNS, pinned target not offered, un-opted v6->v7),
