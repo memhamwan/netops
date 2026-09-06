@@ -30,6 +30,12 @@
       community.routeros.command:
         commands:
           - '/system routerboard upgrade'
+      vars:
+        # `/system routerboard upgrade` blocks the session while it writes the
+        # bootloader to flash — longer than the 60s command_timeout in
+        # ansible.cfg on this hardware. Give it its own budget so we wait for the
+        # write to finish before rebooting (it does not prompt, unlike reboot).
+        ansible_command_timeout: "{{ routeros_routerboard_timeout }}"
       changed_when: true
 
     - name: Reboot to apply the RouterBOARD firmware
