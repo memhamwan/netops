@@ -73,9 +73,12 @@ a firmware upgrade needs. `ansible_user` defaults to `$USER`, key-based, same as
 
 ## Known caveats for review
 
-1. `check-for-updates` and the online download need the device to reach
-   `upgrade.mikrotik.com`. On an islanded site that path may be down — use the
-   offline `.npk` mode there.
+1. `check-for-updates` and the online download need the device to **resolve and
+   reach `upgrade.mikrotik.com`** — so the device must have working DNS
+   (`/ip dns print` must show `servers`) and an internet path. Several fleet
+   devices have no DNS set (e.g. r2.sco), so online mode fails there with a
+   clear message; fix DNS (routeros_baseline/site_services) or use the offline
+   `.npk` mode.
 2. **v6 → v7 is a major migration** (config semantics change). The role refuses
    it unless `-e routeros_allow_major_upgrade=true`, per device, after you've
    reviewed that device's config. `sec2.mno` (RoMON, 6.49.4) is the live example
@@ -90,10 +93,12 @@ a firmware upgrade needs. `ansible_user` defaults to `$USER`, key-based, same as
    deterministic and the ordering reviewable in a PR.
 5. RouterOS wraps the *echoed* `:put` command line when it is wider than the
    detected terminal (~46 cols observed on mipsbe), leaking echo fragments into
-   the command output. The real value is always the **last line** of each
-   command's block, so all reads parse `stdout_lines[i] | last` — not the joined
-   `stdout[i]`. (Dropping `:put` is not an option: the module returns empty
-   without it.)
+   the command output — and when the queried value is **empty**, only those echo
+   lines come back. So all reads drop echo lines (they contain `:put`, `/system`,
+   or a `<` wrap marker) and take what remains, treating "nothing left" as an
+   empty value. This is what lets the "could not reach servers" guard fire on a
+   device with no DNS instead of mistaking an echo fragment for a version.
+   (Dropping `:put` is not an option: the module returns empty without it.)
 6. No automatic rollback. If a device comes back on the wrong version the run
    halts (`any_errors_fatal`) so you can intervene; RouterOS keeps the previous
    version for a manual `/system package downgrade` if needed.

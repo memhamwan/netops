@@ -14,9 +14,9 @@
 
 - name: Record RouterBOARD firmware versions
   ansible.builtin.set_fact:
-    # value is the LAST line of each command's block (RouterOS wraps echoed :put)
-    rb_current_fw: "{{ rb.stdout_lines[0] | default(['']) | last | trim }}"
-    rb_upgrade_fw: "{{ rb.stdout_lines[1] | default(['']) | last | trim }}"
+    # strip wrapped-echo lines, take the real value (RouterOS wraps echoed :put)
+    rb_current_fw: "{{ ((rb.stdout_lines[0] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
+    rb_upgrade_fw: "{{ ((rb.stdout_lines[1] | default([]) | reject('search', ':put|/system|<') | map('trim') | select | list) + ['']) | first }}"
 
 - name: Report that the RouterBOARD firmware is already current
   ansible.builtin.debug:
