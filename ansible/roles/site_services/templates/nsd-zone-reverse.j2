@@ -1,0 +1,26 @@
+{% set parts = reverse_zone.split('.') %}
+{% set net = parts[2] ~ '.' ~ parts[1] ~ '.' ~ parts[0] %}
+; RENDERED by the netops site_services role — reverse zone {{ reverse_zone }}.
+; PTRs for the inventory IPs that fall inside this /24 (down hosts excluded).
+; reverse_zone "{{ reverse_zone }}" → network {{ net }}.0/24. One authoritative
+; zonefile per reverse zone; rendered identically on every service host (see
+; nsd-zone-forward.j2 for the serial/no-AXFR rationale).
+$ORIGIN {{ reverse_zone }}.
+$TTL {{ dns_zone_ttl }}
+{% set body %}
+{% for host in groups['all'] | sort %}
+{% if hostvars[host].ip is defined and host not in (groups['down'] | default([])) and hostvars[host].ip.startswith(net ~ '.') %}
+{{ hostvars[host].ip.split('.')[3] }} IN PTR {{ host }}.
+{% endif %}
+{% endfor %}
+{% endset %}
+@ IN SOA ns1.{{ dns_zone }}. {{ dns_soa_rname }} (
+    {{ (body | hash('md5'))[:8] | int(0, 16) }} ; serial (content hash)
+    {{ dns_soa_refresh }} ; refresh
+    {{ dns_soa_retry }} ; retry
+    {{ dns_soa_expire }} ; expire
+    {{ dns_soa_negative_ttl }} ) ; negative TTL
+{% for ns_rec in dns_ns_records %}
+@ IN NS {{ ns_rec.name }}.{{ dns_zone }}.
+{% endfor %}
+{{ body }}

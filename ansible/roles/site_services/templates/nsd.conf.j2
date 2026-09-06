@@ -1,0 +1,39 @@
+# RENDERED by the netops site_services role — do not edit on the host.
+# Dropped into /etc/nsd/nsd.conf.d/ (Debian's nsd.conf includes conf.d/*.conf).
+#
+# NSD is the AUTHORITATIVE server for the internal zone. It is separated from
+# unbound (the recursive resolver on this same host) BY ADDRESS, because both
+# want :53:
+#   • unbound owns :53 on the recursive anycast IPs + the host's own address
+#     (it binds those explicitly when NSD is enabled — see unbound-netops.conf).
+#   • NSD owns :53 on the authdns anycast IPs (ns1/ns2) and 127.0.0.1@{{ nsd_stub_port }}
+#     — the loopback listener that unbound's stub-zone resolves the internal
+#     zone through (the split-brain safeguard; see docs/dns-authority-design.md).
+#
+# The zone is rendered from the inventory identically onto every service host
+# ("git is the cluster" — no AXFR, no primary, no runtime state to diverge).
+server:
+    # Bind the authdns anycast /32s even before the health script has placed
+    # them on {{ anycast_interface }}: NSD must be ready the instant the address
+    # appears. No start-up ordering loop — the health check that adds the /32
+    # probes NSD on the loopback listener, not on the anycast address.
+    ip-transparent: yes
+    do-ip6: no
+    ip-address: 127.0.0.1@{{ nsd_stub_port }}
+{% for svc in anycast_services | selectattr('service', 'eq', 'authdns') %}
+    ip-address: {{ svc.ip }}
+{% endfor %}
+    zonesdir: "/etc/nsd/zones"
+    hide-version: yes
+    # Answered as CH TXT id.server — same role as unbound's identity: lets the
+    # monitoring layer tell which anycast instance replied.
+    identity: "{{ inventory_hostname | replace('.' ~ dns_zone, '') }}"
+
+zone:
+    name: "{{ dns_zone }}"
+    zonefile: "{{ dns_zone }}.zone"
+{% for zone in dns_reverse_zones %}
+zone:
+    name: "{{ zone }}"
+    zonefile: "{{ zone }}.zone"
+{% endfor %}

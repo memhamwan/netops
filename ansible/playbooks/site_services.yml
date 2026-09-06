@@ -7,6 +7,9 @@
 #   ansible-playbook playbooks/site_services.yml                  # M1: serve, announce nothing
 #   ansible-playbook playbooks/site_services.yml \
 #     -e anycast_enabled=true -e anycast_confirm=true             # M2+: announce
+#   ansible-playbook playbooks/site_services.yml \
+#     -e nsd_enabled=true -e nsd_confirm=true                     # authoritative NSD
+#                                                                 # (record parity first!)
 - name: Deploy site network services
   hosts: service_hosts
   become: true
@@ -37,5 +40,21 @@
           -e anycast_confirm=true once the change is intended and reviewed.
         quiet: true
       when: anycast_enabled | default(false) | bool
+
+    # Enabling NSD flips on-net resolution of the whole internal zone from
+    # unbound's local-data to a stub-zone into NSD — a stub-zone has no
+    # fall-through, so any memhamwan.net name not yet in the rendered zone will
+    # NXDOMAIN on-net. Requiring a second flag keeps that off a routine
+    # redeploy. Confirm record parity first (docs/dns-authority-design.md, D1).
+    - name: Enabling authoritative NSD requires explicit confirmation
+      ansible.builtin.assert:
+        that: nsd_confirm | default(false) | bool
+        fail_msg: >-
+          nsd_enabled is true but nsd_confirm is not set. NSD becomes
+          authoritative for the whole internal zone and unbound resolves it via
+          a stub-zone (no fall-through). Ensure record parity, then re-run with
+          -e nsd_confirm=true.
+        quiet: true
+      when: nsd_enabled | default(false) | bool
   roles:
     - site_services
