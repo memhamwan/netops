@@ -2,7 +2,10 @@
 # One entry per device. `device` (short hostname) drives alerts/dashboards;
 # the target is the inventory IP when recorded — monitoring must keep working
 # when DNS is broken — and the hostname otherwise.
-{% for h in groups['routeros'] | difference(groups['down'] | default([])) | sort %}
-- labels: {site: {{ hostvars[h].group_names | reject('eq', 'routeros') | first }}, device: {{ h | replace('.memhamwan.net', '') }}}
+# `excluded` hosts are not probed at all; `expected_down` hosts are probed
+# with an `expected: down` label so the reachability alerts skip them while
+# their availability history keeps recording.
+{% for h in groups['routeros'] | difference(groups['excluded'] | default([])) | sort %}
+- labels: {site: {{ hostvars[h].group_names | reject('in', ['routeros', 'excluded', 'expected_down']) | first }}, device: {{ h | replace('.memhamwan.net', '') }}{% if h in groups['expected_down'] | default([]) %}, expected: down{% endif %}}
   targets: [{{ hostvars[h].ip | default(h) }}]
 {% endfor %}

@@ -102,7 +102,7 @@
 # Play 1 — PLAN: order the in-scope hosts deepest-first into _firmware_run.
 # ---------------------------------------------------------------------------
 - name: RouterOS firmware — plan the serial upgrade order
-  hosts: 'routeros:!down'  # down group = known-dead devices, see inventory
+  hosts: 'routeros:!excluded:!expected_down'  # lifecycle groups: see inventory
   gather_facts: false
   tasks:
     - name: Execution gate — this play is a draft pending review

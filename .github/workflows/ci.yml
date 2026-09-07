@@ -65,6 +65,16 @@ jobs:
           docker run --rm -v "$PWD:/repo:ro" -w /repo
           --entrypoint promtool prom/prometheus:v3.14.0
           test rules tests/prometheus/site-services_test.yml
+          tests/prometheus/reachability_test.yml
+
+      # A probed hostname with no DNS record can never succeed — permanent
+      # false alarm (the ups.sco/ups.mno defect). Runs on the rendered
+      # targets, after the render step above.
+      - name: probe targets are IPs or resolvable names
+        run: >
+          python tests/check_probe_targets.py
+          ansible/build/rendered/icmp-routeros.yml
+          ansible/build/rendered/icmp-infra.yml
 
       - name: promtool check config
         run: >
@@ -99,3 +109,28 @@ jobs:
           for f in ansible/roles/netops_host/files/monitoring/grafana/dashboards/*.json; do
             jq empty "$f"
           done
+
+  # No two fleet devices may share an OSPF router-id (the 2026-09 LSA-war
+  # incident). Checks the latest Oxidized exports against the inventory.
+  # continue-on-error until the oxidized push pipeline is fixed and the
+  # post-incident export (ftn.sco -> 44.34.131.146) lands on the audit repo's
+  # main branch — flip it to a hard failure then.
+  router-id-uniqueness:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch latest config exports
+        run: >
+          git clone --depth 1 --branch main
+          https://github.com/memhamwan/routeros-config-audit
+          /tmp/routeros-config-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pyyaml
+        run: pip install pyyaml
+      - name: OSPF router-ids are unique across the fleet
+        run: >
+          python tests/check_ospf_router_ids.py
+          ansible/inventory/hosts.yml /tmp/routeros-config-audit

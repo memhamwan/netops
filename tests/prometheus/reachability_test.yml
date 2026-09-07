@@ -1,0 +1,80 @@
+---
+# promtool unit tests for the reachability rules.
+#   promtool test rules tests/prometheus/reachability_test.yml
+#
+# These encode the expected-down design decision (2026-09 UPS census): hosts
+# labelled expected="down" keep recording availability but must never page,
+# and a site whose every device is expected-down must not raise SiteDown.
+# A label-matching mistake here would either resurrect the permanent alert
+# noise or — worse — silently swallow a real outage.
+# NOTE: promtool resolves rule_files relative to THIS FILE (see the note in
+# site-services_test.yml).
+rule_files:
+  - ../../ansible/roles/netops_host/files/monitoring/prometheus/rules/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── expected-down hosts never page; unexpected failures still do ──
+  - interval: 1m
+    name: expected-down host is silent, unexpected one pages
+    input_series:
+      - series: 'probe_success{job="blackbox-icmp",device="ups.mno",site="mno",kind="ups",expected="down",instance="44.34.129.50"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="ap1.mno",site="mno",expected="down",instance="44.34.129.49"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="r1.mno",site="mno",instance="44.34.129.34"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="r2.mno",site="mno",instance="44.34.129.35"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NodeDown
+        exp_alerts:
+          - exp_labels:
+              job: blackbox-icmp
+              device: r1.mno
+              site: mno
+              instance: 44.34.129.34
+              severity: page
+      # r2.mno still answers, so the site is not down
+      - eval_time: 10m
+        alertname: SiteDown
+        exp_alerts: []
+
+  # ── a site whose every device is expected-down raises nothing ──
+  - interval: 1m
+    name: fully expected-down site is silent, a real site outage still pages
+    input_series:
+      - series: 'probe_success{job="blackbox-icmp",device="r1.leb",site="leb",expected="down",instance="44.34.128.161"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="ap.leb",site="leb",expected="down",instance="44.34.128.188"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="r1.ftn",site="ftn",instance="44.34.129.194"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="sco.ftn",site="ftn",instance="44.34.129.195"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SiteDown
+        exp_alerts:
+          - exp_labels:
+              site: ftn
+              severity: page
+
+  # ── an expected-down UPS cannot mask a real site outage (kind + expected
+  #    are both excluded from the SiteDown universe) ──
+  - interval: 1m
+    name: dead expected-down ups does not block SiteDown for its site
+    input_series:
+      - series: 'probe_success{job="blackbox-icmp",device="ups.azo",site="azo",kind="ups",expected="down",instance="44.34.129.77"}'
+        values: "0+0x30"
+      - series: 'probe_success{job="blackbox-icmp",device="r1.azo",site="azo",instance="44.34.129.66"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SiteDown
+        exp_alerts:
+          - exp_labels:
+              site: azo
+              severity: page

@@ -14,7 +14,9 @@
     use_ssl = False
 {% endif %}
     routerboard = True
-{% for h in groups['routeros'] | difference(groups['down'] | default([])) | sort %}
+{# excluded hosts don't exist to monitoring; expected_down hosts are known
+   dead — scraping them would just burn the shared scrape-duration budget #}
+{% for h in groups['routeros'] | difference((groups['excluded'] | default([])) + (groups['expected_down'] | default([]))) | sort %}
 
 [{{ h | replace('.memhamwan.net', '') }}]
 {# inventory IP when recorded, like the ICMP targets — fleet metrics must
