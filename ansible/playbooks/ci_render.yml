@@ -202,6 +202,9 @@
     - name: Render the NSD-enabled variant
       ansible.builtin.set_fact:
         nsd_enabled: true
+        # an earlier render left this false via set_fact; restore the role
+        # default so the NSD variant exercises the public-authoritative config
+        dns_authoritative_public: true
 
     - name: Render NSD, zone, stub, and the NSD-mode unbound config
       ansible.builtin.template:

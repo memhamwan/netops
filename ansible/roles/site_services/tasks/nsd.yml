@@ -128,11 +128,13 @@
         enabled: true
         daemon_reload: true
 
-# Teardown: stop the DNSSEC re-sign timer whenever DNSSEC is off — NSD off, or NSD
+# Teardown: stop the DNSSEC re-sign job whenever DNSSEC is off — NSD off, or NSD
 # on but dnssec_enabled false. Guarded on the unit existing so a fresh host is
 # untouched. nsd.conf reverts to the unsigned zonefile on its own (rendered from
-# dnssec_enabled), so no signed-serving lingers.
-- name: Stop the DNSSEC re-sign timer when DNSSEC is disabled
+# dnssec_enabled), so no signed-serving lingers. This runs during NSD prep, i.e.
+# BEFORE the :53 socket hand-off in main.yml — so the signer is quiesced before
+# NSD/unbound change listener ownership.
+- name: Stop the DNSSEC re-sign job when DNSSEC is disabled
   when: not (dnssec_enabled | default(false) | bool)
   block:
     - name: Is the DNSSEC re-sign timer installed?
@@ -145,4 +147,13 @@
         name: netops-nsd-resign.timer
         state: stopped
         enabled: false
+      when: resign_timer_unit.stat.exists
+
+    # Stopping the timer does NOT stop an already-running Type=oneshot service.
+    # systemctl stop on the oneshot is synchronous, so this waits for an in-flight
+    # sign/reload to finish before the listener hand-off.
+    - name: Stop the DNSSEC re-sign service (wait for any in-flight sign)
+      ansible.builtin.systemd:
+        name: netops-nsd-resign.service
+        state: stopped
       when: resign_timer_unit.stat.exists

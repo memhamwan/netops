@@ -96,7 +96,7 @@ so `dnssec_enabled` is safe to turn on ahead of delegation.
 
 unbound gets a **`stub-zone`** for `memhamwan.net` (and the reverse
 `in-addr.arpa` zones) pointing at the **local** NSD:
-```
+```yaml
 stub-zone:
     name: "memhamwan.net"
     stub-addr: 127.0.0.1@5353    # NSD also listens on loopback:5353
@@ -190,21 +190,35 @@ determine the actual DNSSEC state + registrar DS. No email is expected; verify.
 The CSK is the domain's root of trust, so it is minted by hand, not by the role.
 On the controller (any box with `ldnsutils` + sops/age):
 
-```sh
+Do this in a private working dir (e.g. `umask 077` first). The private key must
+**never** appear in a command line — process arguments are visible to other
+users via `ps`/`/proc`, so do NOT pass it with command substitution
+(`sops set … "$(…)"`). Add it by opening the encrypted file in your editor.
+
+```shell
 # 1. Generate a CSK (KSK+ZSK combined) for the zone.
+umask 077
 ldns-keygen -a ECDSAP256SHA256 -k memhamwan.net
 # -> writes Kmemhamwan.net.+013+NNNNN.{key,private} in the cwd.
 
-# 2. Store the key material in sops and record the basename in group_vars.
-sops set secrets/secrets.sops.yaml '["dnssec_csk_private"]' "$(jq -Rs . < Kmemhamwan.net.+013+NNNNN.private)"
-sops set secrets/secrets.sops.yaml '["dnssec_csk_dnskey"]'  "$(jq -Rs . < Kmemhamwan.net.+013+NNNNN.key)"
+# 2. Edit sops interactively (key material goes via the editor, not argv) and
+#    paste the two files' contents as block scalars:
+#      dnssec_csk_private: |
+#        <contents of Kmemhamwan.net.+013+NNNNN.private>
+#      dnssec_csk_dnskey: |
+#        <contents of Kmemhamwan.net.+013+NNNNN.key>
+sops secrets/secrets.sops.yaml
 #    group_vars/service_hosts.yml:  dnssec_csk_basename: "Kmemhamwan.net.+013+NNNNN"
 
-# 3. Destroy the local plaintext copies (they now live only in sops).
-shred -u Kmemhamwan.net.+013+NNNNN.private
+# 3. Remove the local plaintext copies.
+rm -f Kmemhamwan.net.+013+NNNNN.private Kmemhamwan.net.+013+NNNNN.key
 ```
 
-Then deploy with `-e nsd_enabled=true -e nsd_confirm=true -e dnssec_enabled=true`.
+Note: `rm` (and even `shred`) cannot guarantee erasure — filesystem snapshots,
+backups, journaling, and SSD wear-leveling can retain copies. Treat the key as
+potentially recoverable from any host it touched; if that host was ever exposed,
+re-key. Then deploy with
+`-e nsd_enabled=true -e nsd_confirm=true -e dnssec_enabled=true`.
 The role installs the key on both nodes, signs, and prints/saves the DS record.
 **Back up the sops entry** — losing the private key means re-keying + a fresh DS
 at the registrar. Rollover is the same three steps with a new key, deploy, submit
