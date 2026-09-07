@@ -37,6 +37,9 @@ tests:
               site: mno
               instance: 44.34.129.34
               severity: page
+            exp_annotations:
+              summary: "r1.mno unreachable"
+              description: "ICMP to 44.34.129.34 (site mno) failing for 5m"
       # r2.mno still answers, so the site is not down
       - eval_time: 10m
         alertname: SiteDown
@@ -61,6 +64,9 @@ tests:
           - exp_labels:
               site: ftn
               severity: page
+            exp_annotations:
+              summary: "Site ftn entirely unreachable"
+              description: "Every monitored device at ftn is failing ICMP"
 
   # ── an expected-down UPS cannot mask a real site outage (kind + expected
   #    are both excluded from the SiteDown universe) ──
@@ -78,3 +84,6 @@ tests:
           - exp_labels:
               site: azo
               severity: page
+            exp_annotations:
+              summary: "Site azo entirely unreachable"
+              description: "Every monitored device at azo is failing ICMP"
