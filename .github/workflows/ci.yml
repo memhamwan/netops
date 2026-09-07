@@ -50,11 +50,13 @@ jobs:
       # quoting bug there is a routing bug.
       - name: shellcheck the rendered health script
         # Both switch positions: the default script and the nsd_enabled variant,
-        # which adds the AUTHDNS_IPS branches. ci_render.yml renders both.
+        # which adds the AUTHDNS_IPS branches. Plus the DNSSEC re-sign script
+        # (runs as root, signs zones). ci_render.yml renders all three.
         run: >
           shellcheck -s sh
           ansible/build/rendered/site-services/anycast-health.sh
           ansible/build/rendered/site-services/anycast-health.sh.nsd-on
+          ansible/build/rendered/site-services/nsd-resign.sh.dnssec-on
 
       - name: promtool check rules
         run: >

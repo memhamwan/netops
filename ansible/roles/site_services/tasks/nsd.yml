@@ -96,6 +96,13 @@
         reverse_zone: "{{ item }}"
       notify: restart nsd
 
+    # Sign the forward zone BEFORE nsd-checkconf: in DNSSEC mode nsd.conf serves
+    # {{ dns_zone }}.zone.signed, so that file must exist before the config check
+    # (and the start at the hand-off). Inert unless dnssec_enabled.
+    - name: Sign the forward zone (DNSSEC)
+      ansible.builtin.include_tasks: dnssec.yml
+      when: dnssec_enabled | default(false) | bool
+
     # nsd-checkconf validates only the server config — it does NOT parse the
     # zonefiles, so a malformed zone would sail through here and then wedge NSD
     # on restart. Check the config, then check every zonefile explicitly.
@@ -120,3 +127,22 @@
         name: nsd
         enabled: true
         daemon_reload: true
+
+# Teardown: stop the DNSSEC re-sign timer whenever DNSSEC is off — NSD off, or NSD
+# on but dnssec_enabled false. Guarded on the unit existing so a fresh host is
+# untouched. nsd.conf reverts to the unsigned zonefile on its own (rendered from
+# dnssec_enabled), so no signed-serving lingers.
+- name: Stop the DNSSEC re-sign timer when DNSSEC is disabled
+  when: not (dnssec_enabled | default(false) | bool)
+  block:
+    - name: Is the DNSSEC re-sign timer installed?
+      ansible.builtin.stat:
+        path: /etc/systemd/system/netops-nsd-resign.timer
+      register: resign_timer_unit
+
+    - name: Stop and disable the DNSSEC re-sign timer
+      ansible.builtin.systemd:
+        name: netops-nsd-resign.timer
+        state: stopped
+        enabled: false
+      when: resign_timer_unit.stat.exists

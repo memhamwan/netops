@@ -31,7 +31,9 @@ server:
 
 zone:
     name: "{{ dns_zone }}"
-    zonefile: "{{ dns_zone }}.zone"
+    # DNSSEC mode serves the signed zonefile (produced by dnssec.yml / the resign
+    # timer); reverse zones stay unsigned (44Net delegates them).
+    zonefile: "{{ dns_zone }}.zone{{ '.signed' if dnssec_enabled | default(false) | bool else '' }}"
 {% for zone in dns_reverse_zones %}
 zone:
     name: "{{ zone }}"
