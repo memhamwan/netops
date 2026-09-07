@@ -1,11 +1,17 @@
 # Authoritative DNS on the network (design & plan)
 
-**Status: design only — no code yet.** This proposes moving authoritative DNS
-for `memhamwan.net` off Cloudflare and onto the fleet, served by **NSD** co-located
-with the existing recursive/NTP service on the site Pis. Builds on
-[site-services-design.md](site-services-design.md) (the anycast DNS/NTP work).
+**Status:** **D2 (serve-in-parallel) and DNSSEC signing are IMPLEMENTED** in the
+`site_services` role, gated behind `nsd_enabled` / `dnssec_enabled` (both default
+false — inert; merging changes nothing on a live host). **D1 (record parity)** is
+data-only (inventory + `dns_extra_records`). **D3 — the edge `:53` permit and the
+registrar NS/glue/DS delegation — is the remaining MANUAL cutover** (see
+"Delegation cutover (manual runbook)" below); it cannot be automated because the
+registrar is a third party and `er1` is a cloud MikroTik that can't run a
+nameserver. This moves authoritative DNS for `memhamwan.net` off Cloudflare and
+onto the fleet, served by **NSD** co-located with the recursive/NTP service on the
+site Pis. Builds on [site-services-design.md](site-services-design.md).
 The [execution gate](../ansible/roles/routeros_baseline/README.md) applies to the
-router-touching parts (the edge `:53` change, the registrar cutover).
+router-touching parts (the edge `:53` change).
 
 ## Goal & rationale
 
@@ -70,9 +76,21 @@ machinery the recursive/NTP IPs already use.
 
 NSD loads an **inventory-rendered zonefile**, deployed identically to every host,
 exactly like unbound's `local-data` today — so **no primary/secondary AXFR**
-between fleet NSDs. **DNSSEC**: sign **once** in the render pipeline (keys in
-sops) and ship the signed zone to every host, so all NSDs serve identical signed
-data. DS record goes to the registrar.
+between fleet NSDs.
+
+**DNSSEC** (implemented, `dnssec_enabled`): the **forward** zone is signed;
+reverse zones stay **unsigned** (44Net delegates them — their DS would live in
+the `44.in-addr.arpa` tree, not our registrar). One **shared CSK** (Combined
+Signing Key, algorithm 13 ECDSAP256SHA256) lives in **sops**; every node installs
+the *same* key, so all nodes serve an **identical `DNSKEY`** and a resolver
+validates whichever anycast node answers. Each node **signs its own** rendered
+zone (`ldns-signzone`) — the RRSIGs differ per node but each is valid under the
+shared key, so no AXFR or central signer is needed. A weekly
+`netops-nsd-resign.timer` (randomized-delayed so the two nodes never resign at
+once) refreshes RRSIGs inside their validity window. The `DS` record is computed
+and saved to `/var/lib/netops/site-services/memhamwan.net.ds` on each host (and
+printed by the deploy) for the registrar step. Nothing a resolver sees changes until that DS is published —
+so `dnssec_enabled` is safe to turn on ahead of delegation.
 
 ### The recursion → authoritative link (split-brain safeguard)
 
@@ -147,10 +165,11 @@ determine the actual DNSSEC state + registrar DS. No email is expected; verify.
 
 - **D1** — record parity in inventory/extra-records + the CF-zone audit (no code
   risk; it's data).
-- **D2** — `nsd` role: inventory-rendered signed zone, ns `/32`s on `anycast0`,
-  unbound `stub-zone`, serving in parallel (not delegated). Validate.
-- **D3** — edge `:53` (gated) + registrar NS/glue/DS cutover; decommission
-  Cloudflare.
+- **D2 — IMPLEMENTED** (gated `nsd_enabled`, plus `dnssec_enabled` for signing):
+  `nsd` role, inventory-rendered zone (signed forward zone), ns `/32`s on
+  `anycast0`, unbound `stub-zone`, serving in parallel (not delegated).
+- **D3 — MANUAL cutover** (below): edge `:53` (gated) + registrar NS/glue/DS;
+  decommission Cloudflare.
 
 ## Open questions
 
@@ -158,7 +177,61 @@ determine the actual DNSSEC state + registrar DS. No email is expected; verify.
    file, or split by kind (end-user vs infra vs service)?
 2. `ns1`/`ns2` as anycast `/32`s (matches the pattern, failover) vs per-host
    unicast NS IPs (simpler, no anycast for auth) — leaning anycast.
-3. DNSSEC algorithm/rollover policy and where the keys live in sops.
+3. ~~DNSSEC algorithm/rollover policy and where the keys live in sops.~~
+   **Resolved:** algorithm 13 (ECDSAP256SHA256), one shared CSK in sops
+   (`dnssec_csk_private` / `dnssec_csk_dnskey`, tag in `dnssec_csk_basename`),
+   weekly RRSIG resign via `netops-nsd-resign.timer`. KSK rollover is a rare
+   manual event (bootstrap + re-submit DS — see the runbook).
 4. Confirm the live Cloudflare zone has no MX/TXT/SRV and its current DNSSEC/DS
    state before scheduling the cutover.
+
+## DNSSEC bootstrap (one-time)
+
+The CSK is the domain's root of trust, so it is minted by hand, not by the role.
+On the controller (any box with `ldnsutils` + sops/age):
+
+```sh
+# 1. Generate a CSK (KSK+ZSK combined) for the zone.
+ldns-keygen -a ECDSAP256SHA256 -k memhamwan.net
+# -> writes Kmemhamwan.net.+013+NNNNN.{key,private} in the cwd.
+
+# 2. Store the key material in sops and record the basename in group_vars.
+sops set secrets/secrets.sops.yaml '["dnssec_csk_private"]' "$(jq -Rs . < Kmemhamwan.net.+013+NNNNN.private)"
+sops set secrets/secrets.sops.yaml '["dnssec_csk_dnskey"]'  "$(jq -Rs . < Kmemhamwan.net.+013+NNNNN.key)"
+#    group_vars/service_hosts.yml:  dnssec_csk_basename: "Kmemhamwan.net.+013+NNNNN"
+
+# 3. Destroy the local plaintext copies (they now live only in sops).
+shred -u Kmemhamwan.net.+013+NNNNN.private
+```
+
+Then deploy with `-e nsd_enabled=true -e nsd_confirm=true -e dnssec_enabled=true`.
+The role installs the key on both nodes, signs, and prints/saves the DS record.
+**Back up the sops entry** — losing the private key means re-keying + a fresh DS
+at the registrar. Rollover is the same three steps with a new key, deploy, submit
+the new DS, and remove the old key after the DS TTL.
+
+## Delegation cutover (manual runbook)
+
+Everything above is codified and gated. These final steps are irreducibly manual
+(a third-party registrar and a gated edge-router change) and are **not** a
+follow-up PR — they are a one-time operational cutover. Do them in order, and keep
+Cloudflare authoritative (rollback = leave/undo the registrar NS) until the last
+step validates.
+
+1. **Lower TTLs** on the Cloudflare records a day ahead, so a rollback propagates
+   fast.
+2. **Edge `:53` permit (gated RouterOS change on `er1`)** — forward/allow inbound
+   `udp/tcp :53` from the internet to `44.34.132.53` and `44.34.133.53` so the
+   fleet NS is reachable off-net. `er1` can't run a nameserver; it only routes.
+3. **Registrar** (the domain's registrar control panel — not automatable):
+   - Set the domain's **nameservers** to `ns1.memhamwan.net` and
+     `ns2.memhamwan.net`.
+   - Add **glue A records**: `ns1 → 44.34.132.53`, `ns2 → 44.34.133.53` (breaks
+     the in-zone-nameserver chicken-and-egg).
+   - Add the **DS record** from `/var/lib/netops/site-services/memhamwan.net.ds`
+     (printed by the deploy). This is what makes DNSSEC trusted.
+4. **Validate off-net** — `dig +dnssec @<public-resolver> memhamwan.net SOA` (AD
+   bit set), and a DNSSEC analyzer (dnsviz / Verisign debugger) green, before
+   decommissioning Cloudflare.
+5. **Decommission Cloudflare** last.
 </content>

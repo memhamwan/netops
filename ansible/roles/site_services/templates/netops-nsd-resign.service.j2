@@ -1,0 +1,9 @@
+[Unit]
+# RENDERED by the netops site_services role — do not edit on the host.
+Description=Re-sign the DNSSEC forward zone (netops)
+After=nsd.service
+Wants=nsd.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/netops/site-services/nsd-resign.sh

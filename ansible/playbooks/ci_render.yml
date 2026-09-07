@@ -223,6 +223,26 @@
       vars:
         reverse_zone: 128.34.44.in-addr.arpa
 
+    # ── DNSSEC variant ─────────────────────────────────────────────────────
+    # Render the dnssec_enabled superset so the signing templates (nsd.conf
+    # serving the signed forward zone, the resign script + units) are caught by
+    # CI too — they can't be deploy-tested without the sops CSK. A dummy basename
+    # stands in for the bootstrapped key.
+    - name: Render the DNSSEC-enabled variant
+      ansible.builtin.set_fact:
+        dnssec_enabled: true
+        dnssec_csk_basename: Kmemhamwan.net.+013+00000
+
+    - name: Render nsd.conf + the resign templates with DNSSEC on
+      ansible.builtin.template:
+        src: "../roles/site_services/templates/{{ item.src }}.j2"
+        dest: "{{ render_dir }}/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - {src: nsd.conf, dest: nsd.conf.dnssec-on}
+        - {src: netops-nsd-resign.sh, dest: nsd-resign.sh.dnssec-on}
+        - {src: netops-nsd-resign.timer, dest: netops-nsd-resign.timer.dnssec-on}
+
     - name: The authoritative forward zone carries SOA, NS/glue, fleet, and service records
       ansible.builtin.assert:
         # literal substrings, for the same regex reason as the assertions above
@@ -276,7 +296,10 @@
     - name: In NSD mode the health script gates and announces the authdns /32s
       ansible.builtin.assert:
         that:
-          - "'ZONE_FILE=/etc/nsd/zones/memhamwan.net.zone' in hs"
+          # the zone-skew checksum covers the forward AND reverse zonefiles
+          - "'ZONE_FILES=' in hs"
+          - "'/etc/nsd/zones/memhamwan.net.zone ' in hs"
+          - "'/etc/nsd/zones/128.34.44.in-addr.arpa.zone ' in hs"
           - "'AUTHDNS_IPS=\"44.34.132.53 44.34.133.53\"' in hs"
           # health-gated exactly like dns/ntp, and folded into the reconcile set
           - "'announce \"$_ip\" \"$authdns_healthy\"' in hs"
@@ -284,6 +307,20 @@
         quiet: true
       vars:
         hs: "{{ lookup('file', render_dir ~ '/anycast-health.sh.nsd-on') }}"
+
+    - name: DNSSEC mode serves the signed forward zone and wires the resign job
+      ansible.builtin.assert:
+        that:
+          # forward zone is served signed; reverse zones stay unsigned
+          - "'zonefile: \"memhamwan.net.zone.signed\"' in nsdconf_dnssec"
+          - "'zonefile: \"128.34.44.in-addr.arpa.zone\"' in nsdconf_dnssec"
+          # the resign script signs the forward zone with the bootstrapped key
+          - "'ldns-signzone' in resign"
+          - "'Kmemhamwan.net.+013+00000' in resign"
+        quiet: true
+      vars:
+        nsdconf_dnssec: "{{ lookup('file', render_dir ~ '/nsd.conf.dnssec-on') }}"
+        resign: "{{ lookup('file', render_dir ~ '/nsd-resign.sh.dnssec-on') }}"
 
 # Same idea for linux_baseline: render its templates so a template error or
 # unresolved var is caught in CI — the high-risk SSH config especially must not
