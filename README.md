@@ -113,13 +113,25 @@ To add a recipient: add their `age1...` public key to `.sops.yaml`, then
 DNS management). The Oxidized fleet list, blackbox targets, and mktxp config
 are all templated from it at deploy time.
 
-Known-dead devices go in the inventory's `down` group: they stay in their
-site groups as IPAM record but are excluded from the device-target rendered
-configs (Oxidized, ICMP probes, mktxp), the device plays, and future DNS
-publishing. The one deliberate exception is the Alloy syslog allowlist, which
-still keeps `down` hosts — logs arriving from a supposedly-dead device are
-signal worth capturing. Moving a host in or out of `down` takes a backup-host
-redeploy to apply.
+Dead or missing devices go in one of two lifecycle groups (they stay in their
+site groups as IPAM record either way):
+
+- **`excluded`** — cannot meaningfully be monitored at all (never deployed, or
+  no known address). Dropped from every rendered consumer: ICMP probes,
+  Oxidized, mktxp, the device plays, and DNS publishing.
+- **`expected_down`** — real and addressable but known dead (dark site, dead
+  hardware). Still ICMP-probed, stamped with an `expected: down` label: the
+  reachability alerts skip them (a page must always mean "act now") while
+  their availability history keeps recording, so a returning site shows up in
+  Grafana the moment it answers. Dropped from Oxidized/mktxp/device plays,
+  which cannot reach them anyway.
+
+The one deliberate exception is the Alloy syslog allowlist, which keeps hosts
+from both groups — logs arriving from a supposedly-dead device are signal
+worth capturing. Moving a host between groups takes a backup-host redeploy to
+apply. CI enforces the hygiene this depends on: every rendered probe target
+must be an IP or a resolvable name, and no two fleet devices may share an
+OSPF router-id (checked against the latest Oxidized exports).
 
 **Workstation setup (once per clone):** the controller toolchain (ansible-core,
 librouteros for the RouterOS API modules, lint) lives in a uv-managed project

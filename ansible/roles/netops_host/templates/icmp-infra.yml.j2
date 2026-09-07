@@ -1,5 +1,8 @@
 # RENDERED from ansible/inventory/hosts.yml — do not edit by hand.
-{% for h in groups['ups'] | difference(groups['down'] | default([])) | sort %}
-- labels: {site: {{ hostvars[h].site }}, kind: ups, device: {{ h | replace('.memhamwan.net', '') }}}
+# `excluded` hosts are not probed at all; `expected_down` hosts are probed
+# with an `expected: down` label so the reachability alerts skip them while
+# their availability history keeps recording.
+{% for h in groups['ups'] | difference(groups['excluded'] | default([])) | sort %}
+- labels: {site: {{ hostvars[h].site }}, kind: ups, device: {{ h | replace('.memhamwan.net', '') }}{% if h in groups['expected_down'] | default([]) %}, expected: down{% endif %}}
   targets: [{{ hostvars[h].ip | default(h) }}]
 {% endfor %}

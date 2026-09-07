@@ -18,7 +18,9 @@ server:
 
     # ── Fleet devices (from the inventory `ip:` fields) ──
 {% for host in groups['all'] | sort %}
-{% if hostvars[host].ip is defined and host not in (groups['down'] | default([])) %}
+{# `excluded` hosts don't exist to the fleet; `expected_down` hosts keep their
+   names — they are real addresses that will answer again someday #}
+{% if hostvars[host].ip is defined and host not in (groups['excluded'] | default([])) %}
     local-data: "{{ host }}. 300 IN A {{ hostvars[host].ip }}"
     local-data-ptr: "{{ hostvars[host].ip }} {{ host }}"
 {% endif %}

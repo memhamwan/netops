@@ -6,6 +6,10 @@ on:
     branches: [main]
   pull_request:
 
+# every job only reads the repo
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -65,6 +69,16 @@ jobs:
           docker run --rm -v "$PWD:/repo:ro" -w /repo
           --entrypoint promtool prom/prometheus:v3.14.0
           test rules tests/prometheus/site-services_test.yml
+          tests/prometheus/reachability_test.yml
+
+      # A probed hostname with no DNS record can never succeed — permanent
+      # false alarm (the ups.sco/ups.mno defect). Runs on the rendered
+      # targets, after the render step above.
+      - name: probe targets are IPs or resolvable names
+        run: >
+          python tests/check_probe_targets.py
+          ansible/build/rendered/icmp-routeros.yml
+          ansible/build/rendered/icmp-infra.yml
 
       - name: promtool check config
         run: >
@@ -99,3 +113,33 @@ jobs:
           for f in ansible/roles/netops_host/files/monitoring/grafana/dashboards/*.json; do
             jq empty "$f"
           done
+
+  # No two fleet devices may share an OSPF router-id (the 2026-09 LSA-war
+  # incident). Checks the latest Oxidized exports against the inventory.
+  # A failure here means live network drift, not a bad PR — fix the fleet.
+  router-id-uniqueness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch latest config exports
+        run: >
+          git clone --depth 1 --branch main
+          https://github.com/memhamwan/routeros-config-audit
+          /tmp/routeros-config-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pyyaml
+        run: pip install pyyaml
+      # --allow-missing exemptions (each should carry a removal condition):
+      # - leb.sco: rejoined the active set in PR #26; remove once its first
+      #   export lands after the post-merge backup-host redeploy.
+      # - r2.mno: never onboarded — oxidized gets AuthenticationFailed
+      #   (found 2026-09-07 by this very check). Remove after running
+      #   onboard_device.yml against it.
+      - name: OSPF router-ids are unique across the fleet
+        run: >
+          python tests/check_ospf_router_ids.py
+          --allow-missing leb.sco.memhamwan.net
+          --allow-missing r2.mno.memhamwan.net
+          ansible/inventory/hosts.yml /tmp/routeros-config-audit
