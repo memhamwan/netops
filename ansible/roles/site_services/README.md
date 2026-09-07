@@ -38,9 +38,11 @@ A separate, independently-gated capability: serve `memhamwan.net` (and the
 reverse zones) **authoritatively** from NSD, co-located with unbound and chrony
 but separated **by address**. Design and cutover plan:
 [docs/dns-authority-design.md](../../../docs/dns-authority-design.md). This PR
-is the **serve-in-parallel** stage — NSD is live but **not delegated**; DNSSEC
-signing, the edge `:53` permit, and the registrar NS/glue/DS cutover are the
-next PR.
+covers everything codifiable: NSD **serve-in-parallel** (live but **not
+delegated**, gated by `nsd_enabled`) plus **DNSSEC signing** (gated by
+`dnssec_enabled`). The only remaining steps are the manual cutover — the edge
+`:53` permit and the registrar NS/glue/DS delegation — which cannot be code (a
+gated router change and a third-party registrar; see the design doc's runbook).
 
 | | `nsd_enabled: false` (default) | `nsd_enabled: true` |
 |---|---|---|
@@ -58,8 +60,9 @@ added. See the design doc's D1 milestone.
 ```sh
 # 1. Serve in parallel (after record parity + review): local NSD + unbound
 #    stub-zone. The authdns /32s are NOT yet on the interface or announced —
-#    the anycast master gate is still off. No sops needed yet; DNSSEC keys
-#    arrive with the next PR.
+#    the anycast master gate is still off, and DNSSEC is off, so no sops needed.
+#    Add -e dnssec_enabled=true to also sign the forward zone — that needs the
+#    CSK in sops (see the design doc's "DNSSEC bootstrap").
 ansible-playbook playbooks/site_services.yml \
   -e nsd_enabled=true -e nsd_confirm=true
 
