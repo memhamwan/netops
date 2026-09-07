@@ -1,0 +1,13 @@
+[Unit]
+# RENDERED by the netops site_services role — do not edit on the host.
+Description=Weekly DNSSEC re-sign of the forward zone (netops)
+
+[Timer]
+OnCalendar={{ dnssec_resign_on_calendar }}
+Persistent=true
+# Stagger the two anycast nodes so they never resign/restart at the same instant
+# — at least one stays up through every refresh.
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

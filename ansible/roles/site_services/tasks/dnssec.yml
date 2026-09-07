@@ -1,0 +1,120 @@
+---
+# DNSSEC signing of the FORWARD zone ({{ dns_zone }}). Included from nsd.yml
+# inside the nsd_enabled block, only when dnssec_enabled, and BEFORE the
+# nsd-checkconf/socket hand-off so the .signed file exists when NSD validates and
+# starts. Signs {{ dns_zone }}.zone -> {{ dns_zone }}.zone.signed with the shared
+# CSK (nsd.conf serves the .signed file in DNSSEC mode); a weekly timer resigns
+# so RRSIGs never expire. Reverse zones are NOT signed (44Net delegates them).
+# See docs/dns-authority-design.md.
+
+- name: DNSSEC key material must be bootstrapped before signing
+  ansible.builtin.assert:
+    that:
+      - dnssec_csk_basename | length > 0
+      - dnssec_csk_private | default('') | length > 0
+      - dnssec_csk_dnskey | default('') | length > 0
+    fail_msg: >-
+      dnssec_enabled is true but the CSK is not present. It is the domain's key
+      of trust, so it is bootstrapped once by hand, not auto-generated:
+      run `ldns-keygen -a {{ dnssec_algorithm }} -k {{ dns_zone }}`, store the
+      resulting .private and .key contents into secrets.sops.yaml as
+      dnssec_csk_private / dnssec_csk_dnskey, and set
+      dnssec_csk_basename: "K{{ dns_zone }}.+013+NNNNN" in group_vars. Full steps
+      in docs/dns-authority-design.md ("DNSSEC bootstrap").
+    quiet: true
+
+- name: DNSSEC signing tools (ldnsutils)
+  ansible.builtin.apt:
+    name: ldnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: DNSSEC key directory
+  ansible.builtin.file:
+    path: "{{ dnssec_key_dir }}"
+    state: directory
+    owner: root
+    group: nsd
+    mode: "0750"
+
+- name: Install the shared CSK (identical on every node)
+  ansible.builtin.copy:
+    dest: "{{ dnssec_key_dir }}/{{ dnssec_csk_basename }}.{{ item.ext }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: nsd
+    mode: "{{ item.mode }}"
+  loop:
+    - {ext: "private", content: "{{ dnssec_csk_private }}", mode: "0640"}
+    - {ext: "key", content: "{{ dnssec_csk_dnskey }}", mode: "0644"}
+  loop_control:
+    label: "{{ dnssec_csk_basename }}.{{ item.ext }}"
+  no_log: true   # private key
+  register: csk_material
+
+- name: Install the re-sign script
+  ansible.builtin.template:
+    src: netops-nsd-resign.sh.j2
+    dest: /opt/netops/site-services/nsd-resign.sh
+    mode: "0750"
+  register: resign_script
+
+- name: Install the weekly re-sign service + timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - netops-nsd-resign.service
+    - netops-nsd-resign.timer
+
+- name: Stat the unsigned and signed forward zone
+  ansible.builtin.stat:
+    path: "/etc/nsd/zones/{{ dns_zone }}.zone{{ item }}"
+  loop: ["", ".signed"]
+  register: fwd_zone_stat
+
+# (Re)sign only when needed, so a no-op converge does not churn RRSIGs (and
+# restart NSD) every run: signed missing, unsigned newer than signed, key
+# rotated, or the signer script changed. Ongoing RRSIG refresh is the timer's
+# job. --no-reload: NSD is not running yet during prep — it starts at the :53
+# hand-off in main.yml (this task notifies "restart nsd").
+- name: Sign the forward zone now (no reload — NSD starts at the :53 hand-off)
+  ansible.builtin.command:
+    cmd: /opt/netops/site-services/nsd-resign.sh --no-reload
+  when: >-
+    (not fwd_zone_stat.results[1].stat.exists)
+    or ((fwd_zone_stat.results[0].stat.mtime | default(0))
+        > (fwd_zone_stat.results[1].stat.mtime | default(0)))
+    or (csk_material is changed)
+    or (resign_script is changed)
+  changed_when: true
+  notify: restart nsd
+
+- name: Enable the weekly re-sign timer
+  ansible.builtin.systemd:
+    name: netops-nsd-resign.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# The DS to hand to the registrar (SHA-256). Computed every run (cheap) and saved
+# on the host for the delegation runbook; nothing trusts the zone until this DS
+# is published at the registrar (the manual cutover).
+- name: Compute the DS record for the registrar
+  ansible.builtin.command:
+    cmd: "ldns-key2ds -n -2 {{ dnssec_key_dir }}/{{ dnssec_csk_basename }}.key"
+  register: ds_record
+  changed_when: false
+
+- name: Save the DS record on the host (for the delegation cutover)
+  ansible.builtin.copy:
+    dest: "{{ site_services_var }}/{{ dns_zone }}.ds"
+    content: "{{ ds_record.stdout }}\n"
+    mode: "0644"
+
+- name: DS record to submit at the registrar (delegation cutover)
+  ansible.builtin.debug:
+    msg: "{{ ds_record.stdout_lines }}"
+  run_once: true

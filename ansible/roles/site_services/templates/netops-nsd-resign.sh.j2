@@ -1,0 +1,50 @@
+#!/bin/sh
+# RENDERED by the netops site_services role — do not edit on the host.
+#
+# Signs the FORWARD zone ({{ dns_zone }}) with the shared CSK and, unless
+# --no-reload, reloads NSD. Run once at deploy (by the role, --no-reload, because
+# NSD starts later at the :53 hand-off) and weekly by netops-nsd-resign.timer so
+# RRSIGs never expire. Each anycast node signs independently with the SAME key:
+# the RRSIGs differ per node but all validate under the one shared DNSKEY.
+# Reverse zones are not signed here (44Net delegates them). See
+# docs/dns-authority-design.md.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+ZONE="{{ dns_zone }}"
+ZONEDIR="/etc/nsd/zones"
+KEY="{{ dnssec_key_dir }}/{{ dnssec_csk_basename }}"
+SIGNED="$ZONEDIR/$ZONE.zone.signed"
+LOCK="/run/netops-nsd-resign.lock"
+
+RELOAD=1
+[ "${1:-}" = "--no-reload" ] && RELOAD=0
+
+# Serialize the signer host-wide: the deploy-time sign and the weekly timer (or
+# any overlap) must never run ldns-signzone against this zone at once — it writes
+# non-atomically, so a concurrent run could expose a half-written zone to
+# validation or NSD. One flock spans sign -> validate -> atomic rename -> reload.
+# Re-exec under flock so the whole body holds the lock (RandomizedDelaySec only
+# staggers *different* nodes, not two runs on the same node).
+if [ "${_NSD_RESIGN_LOCKED:-}" != "1" ]; then
+  exec env _NSD_RESIGN_LOCKED=1 flock -w 300 "$LOCK" "$0" "$@"
+fi
+
+# Absolute expiration so the resign cadence is knowable; inception defaults to
+# ~now. ldns-signzone accepts YYYYMMDDhhmmss. The timer runs far inside this
+# window ({{ dnssec_resign_on_calendar }}, validity {{ dnssec_rrsig_validity_days }}d).
+EXP=$(date -u -d "+{{ dnssec_rrsig_validity_days }} days" +%Y%m%d%H%M%S)
+
+# Sign to a temp file on the same filesystem, validate THAT, then atomically
+# rename into place — NSD never sees a partially written zonefile.
+TMP="$SIGNED.tmp.$$"
+trap 'rm -f "$TMP"' EXIT
+ldns-signzone -e "$EXP" -f "$TMP" -o "$ZONE" "$ZONEDIR/$ZONE.zone" "$KEY"
+nsd-checkzone "$ZONE" "$TMP"
+mv -f "$TMP" "$SIGNED"
+
+if [ "$RELOAD" -eq 1 ]; then
+  # reload if the unit supports it, else a brief restart — the OTHER anycast
+  # node keeps answering during the blip.
+  systemctl reload-or-restart nsd
+fi

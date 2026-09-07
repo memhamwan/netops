@@ -7,20 +7,26 @@
 #   ansible-playbook playbooks/site_services.yml                  # M1: serve, announce nothing
 #   ansible-playbook playbooks/site_services.yml \
 #     -e anycast_enabled=true -e anycast_confirm=true             # M2+: announce
+#   ansible-playbook playbooks/site_services.yml \
+#     -e nsd_enabled=true -e nsd_confirm=true                     # authoritative NSD
+#                                                                 # (record parity first!)
 - name: Deploy site network services
   hosts: service_hosts
   become: true
   gather_facts: false
   pre_tasks:
-    # Only the anycast path needs a secret (the OSPF key), so M1 deploys
-    # without sops access at all — no age key, no direnv, nothing to set up
-    # beyond ssh. That keeps the low-risk step genuinely low-friction.
-    - name: Load secrets from sops (only anycast needs the OSPF key)
+    # Secrets are only needed by the anycast path (the OSPF key) and DNSSEC (the
+    # signing CSK), so M1 and a plain nsd-serve deploy need no sops access at all
+    # — no age key, no direnv, nothing beyond ssh. Keeps the low-risk steps
+    # genuinely low-friction.
+    - name: Load secrets from sops (anycast OSPF key / DNSSEC CSK)
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
       become: false
-      when: anycast_enabled | default(false) | bool
+      when: >-
+        (anycast_enabled | default(false) | bool)
+        or (dnssec_enabled | default(false) | bool)
 
     - name: Load extra DNS records
       ansible.builtin.include_vars:
@@ -37,5 +43,33 @@
           -e anycast_confirm=true once the change is intended and reviewed.
         quiet: true
       when: anycast_enabled | default(false) | bool
+
+    # Enabling NSD flips on-net resolution of the whole internal zone from
+    # unbound's local-data to a stub-zone into NSD — a stub-zone has no
+    # fall-through, so any memhamwan.net name not yet in the rendered zone will
+    # NXDOMAIN on-net. Requiring a second flag keeps that off a routine
+    # redeploy. Confirm record parity first (docs/dns-authority-design.md, D1).
+    - name: Enabling authoritative NSD requires explicit confirmation
+      ansible.builtin.assert:
+        that: nsd_confirm | default(false) | bool
+        fail_msg: >-
+          nsd_enabled is true but nsd_confirm is not set. NSD becomes
+          authoritative for the whole internal zone and unbound resolves it via
+          a stub-zone (no fall-through). Ensure record parity, then re-run with
+          -e nsd_confirm=true.
+        quiet: true
+      when: nsd_enabled | default(false) | bool
+
+    # DNSSEC signs the zone NSD already serves — it is meaningless without NSD,
+    # and signing adds RRSIGs no resolver trusts until the DS is at the registrar
+    # (so it is safe to turn on ahead of the delegation cutover).
+    - name: DNSSEC requires NSD
+      ansible.builtin.assert:
+        that: nsd_enabled | default(false) | bool
+        fail_msg: >-
+          dnssec_enabled is true but nsd_enabled is not. DNSSEC signs the zone
+          NSD serves; enable NSD too (-e nsd_enabled=true -e nsd_confirm=true).
+        quiet: true
+      when: dnssec_enabled | default(false) | bool
   roles:
     - site_services
