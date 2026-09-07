@@ -112,12 +112,9 @@ jobs:
 
   # No two fleet devices may share an OSPF router-id (the 2026-09 LSA-war
   # incident). Checks the latest Oxidized exports against the inventory.
-  # continue-on-error until the oxidized push pipeline is fixed and the
-  # post-incident export (ftn.sco -> 44.34.131.146) lands on the audit repo's
-  # main branch — flip it to a hard failure then.
+  # A failure here means live network drift, not a bad PR — fix the fleet.
   router-id-uniqueness:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Fetch latest config exports
