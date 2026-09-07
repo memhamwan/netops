@@ -6,6 +6,10 @@ on:
     branches: [main]
   pull_request:
 
+# every job only reads the repo
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -127,7 +131,15 @@ jobs:
           python-version: "3.12"
       - name: Install pyyaml
         run: pip install pyyaml
+      # --allow-missing exemptions (each should carry a removal condition):
+      # - leb.sco: rejoined the active set in PR #26; remove once its first
+      #   export lands after the post-merge backup-host redeploy.
+      # - r2.mno: never onboarded — oxidized gets AuthenticationFailed
+      #   (found 2026-09-07 by this very check). Remove after running
+      #   onboard_device.yml against it.
       - name: OSPF router-ids are unique across the fleet
         run: >
           python tests/check_ospf_router_ids.py
+          --allow-missing leb.sco.memhamwan.net
+          --allow-missing r2.mno.memhamwan.net
           ansible/inventory/hosts.yml /tmp/routeros-config-audit
