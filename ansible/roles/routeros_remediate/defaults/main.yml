@@ -1,0 +1,8 @@
+---
+# plan: compute, print and save the plan; change nothing (the default).
+# apply: also carry it out — needs confirm_execution=true as well.
+remediate_mode: plan
+
+# Plans land here (gitignored: ansible/build/). They name accounts, keys and
+# files: keep them private.
+routeros_remediate_dir: "{{ playbook_dir }}/../build/remediate"

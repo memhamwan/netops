@@ -83,6 +83,25 @@ def as_717(facts):
     return old
 
 
+SINGLE_VALUE = {"ssh", "cloud", "dns", "socks", "proxy", "traffic_flow",
+                "pptp_server", "l2tp_server", "sstp_server"}
+
+
+def graft(base, donor, menus):
+    """`base` with `donor`'s state in the given menus: one attack pattern on
+    an otherwise clean device. Single-value menus are taken whole; list menus
+    gain the donor's rows that base does not have (same baseline, same ids)."""
+    out = copy.deepcopy(base)
+    for menu in menus:
+        rows = copy.deepcopy(donor["menus"].get(menu, []))
+        if menu in SINGLE_VALUE:
+            out["menus"][menu] = rows
+        else:
+            have = {r.get(".id") for r in base["menus"].get(menu, [])}
+            out["menus"][menu] = out["menus"].get(menu, []) + [r for r in rows if r.get(".id") not in have]
+    return out
+
+
 @pytest.fixture
 def clean():
     return load("lab-clean-7.24.5")

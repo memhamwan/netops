@@ -221,6 +221,10 @@ used by the roles, the netops host's scheduled audit and the tests.
 - `playbooks/routeros_audit.yml` — read-only drift report, safe any time
   (`ansible/build/audit/fleet.txt`). The netops host runs the same audit
   every 30 minutes and alerts on drift (`rules/routeros-audit.yml`).
+- `playbooks/routeros_remediate.yml` — the ordered removal/restore plan for
+  a device (plan mode by default: changes nothing). Declare a device's
+  legitimate extras in `inventory/host_vars/<host>.yml` (`routeros_allow`)
+  until its plan proposes only what should go.
 - `tests/lab/` — two RouterOS CHR VMs under QEMU on your machine, for running
   the roles end to end before they touch a device.
 
@@ -235,6 +239,7 @@ ansible/             inventory (source of truth), playbooks, roles
   roles/routeros_lifecycle/ merges the private quarantine list into each run
   roles/routeros_facts/    read-only device snapshot over the API
   roles/routeros_audit/    drift report against the declared state
+  roles/routeros_remediate/ removes what is not declared (plan mode default)
   roles/routeros_baseline/ device baseline (ran 2026-08-29/30), see its README
   roles/site_services/     DRAFT DNS/NTP + anycast — never executed, see its README
 docs/                design docs (site services / anycast, RouterOS convergence)

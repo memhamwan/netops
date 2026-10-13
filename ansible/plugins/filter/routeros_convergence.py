@@ -7,6 +7,8 @@
     routeros_audit_text                    report -> text lines
     routeros_audit_metrics(reports, unreadable, now) -> textfile metrics
     routeros_fleet(entries, romon, probes) -> fleet view
+    routeros_remediation_plan(facts, declared) -> ordered operations
+    routeros_plan_text                     plan -> text
 """
 import os
 import sys
@@ -17,7 +19,7 @@ _LIB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib
 if _LIB not in sys.path:
     sys.path.insert(0, _LIB)
 
-from routeros_convergence import audit, declared  # noqa: E402
+from routeros_convergence import audit, declared, plan  # noqa: E402
 
 
 def _wrap(func):
@@ -40,4 +42,6 @@ class FilterModule:
             "routeros_audit_text": audit.render_text,
             "routeros_audit_metrics": audit.metrics,
             "routeros_fleet": audit.fleet,
+            "routeros_remediation_plan": plan.plan,
+            "routeros_plan_text": plan.render_text,
         }

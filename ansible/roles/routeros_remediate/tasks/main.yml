@@ -1,0 +1,57 @@
+---
+# Remove what is not declared, restore what was tampered with. The plan comes
+# from the same policy as the audit (lib/routeros_convergence), ordered:
+# persistence, accounts and keys, services, kits and rules, files, logging.
+- name: Remediation mode is plan or apply
+  ansible.builtin.assert:
+    that: remediate_mode in ['plan', 'apply']
+    fail_msg: "remediate_mode must be plan or apply, not {{ remediate_mode }}"
+    quiet: true
+
+- name: Apply mode is not available yet
+  ansible.builtin.assert:
+    that: remediate_mode == 'plan'
+    fail_msg: "remediate_mode=apply lands with the next rollout PR; this version only plans"
+    quiet: true
+
+- name: Declared state is usable
+  ansible.builtin.assert:
+    that: problems | length == 0
+    fail_msg: "{{ problems | join('; ') }}"
+    quiet: true
+  vars:
+    problems: "{{ routeros_declared | routeros_declared_problems }}"
+
+- name: Compute the plan
+  ansible.builtin.set_fact:
+    routeros_remediation: "{{ routeros_facts | routeros_remediation_plan(routeros_declared) }}"
+    routeros_remediate_stamp: "{{ routeros_facts.gathered_at | regex_replace('[-:]', '') }}"
+
+- name: Plan directory
+  ansible.builtin.file:
+    path: "{{ routeros_remediate_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+  check_mode: false
+
+- name: Save the plan
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ routeros_remediate_dir }}/{{ inventory_hostname }}-{{ routeros_remediate_stamp }}.{{ item.ext }}"
+    mode: "0600"
+  loop:
+    - {ext: plan.json, content: "{{ routeros_remediation | to_nice_json }}"}
+    - {ext: plan.txt, content: "{{ routeros_remediation | routeros_plan_text }}\n"}
+  loop_control:
+    label: "{{ item.ext }}"
+  delegate_to: localhost
+  check_mode: false
+  changed_when: false
+
+# yellow when there is anything to change; plan mode changes nothing
+- name: Plan (nothing applied in plan mode)
+  ansible.builtin.debug:
+    msg: "{{ (routeros_remediation | routeros_plan_text).splitlines() }}"
+  changed_when: routeros_remediation.summary.ops > 0

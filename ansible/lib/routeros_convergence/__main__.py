@@ -2,6 +2,7 @@
 
     python -m routeros_convergence gather --name H --address A --user U --out F
     python -m routeros_convergence audit --facts F --declared D [--out R]
+    python -m routeros_convergence plan --facts F --declared D [--out P]
     python -m routeros_convergence audit-fleet --targets T --credentials C \\
         --textfile P --report R
     python -m routeros_convergence romon --address A --user U [--duration 15]
@@ -68,6 +69,22 @@ def cmd_audit(args):
     if args.out:
         _write(args.out, json.dumps(rep, indent=1, sort_keys=True))
     print(audit.render_text(rep) if args.text else json.dumps(rep["counts"]))
+    return 0
+
+
+def cmd_plan(args):
+    from . import plan as planner
+
+    snap = _load(args.facts)
+    want = _load(args.declared)
+    problems = declared_mod.validate(want)
+    if problems:
+        print("error: " + "; ".join(problems), file=sys.stderr)
+        return 2
+    p = planner.plan(snap, want)
+    if args.out:
+        _write(args.out, json.dumps(p, indent=1, sort_keys=True))
+    print(planner.render_text(p))
     return 0
 
 
@@ -179,6 +196,12 @@ def main(argv=None):
     p.add_argument("--out")
     p.add_argument("--text", action="store_true")
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("plan", help="remediation plan for a facts file (changes nothing)")
+    p.add_argument("--facts", required=True)
+    p.add_argument("--declared", required=True)
+    p.add_argument("--out")
+    p.set_defaults(func=cmd_plan)
 
     p = sub.add_parser("audit-fleet", help="scheduled audit: gather + audit + metrics")
     p.add_argument("--targets", required=True)

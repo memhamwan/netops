@@ -1,0 +1,46 @@
+---
+# Converge devices back to their declared state by removing what is not
+# declared (accounts, keys, schedulers, scripts, files, proxy/VPN kits,
+# rules) and restoring what was tampered with (services, logging, DNS).
+# Plan mode is the default and changes nothing:
+#
+#   ansible-playbook playbooks/routeros_remediate.yml -l r1.sco.memhamwan.net
+#
+# Plans: ansible/build/remediate/<host>-<time>.plan.{txt,json}. Declare a
+# device's legitimate extras (routeros_allow in host_vars) until its plan
+# proposes nothing you want to keep. Design: docs/routeros-convergence-design.md
+- name: Lifecycle — merge the private quarantine list (contacts no device)
+  ansible.builtin.import_playbook: lifecycle.yml
+
+- name: RouterOS remediation
+  hosts: 'routeros:!excluded:!expected_down:!quarantined'  # lifecycle groups: see inventory
+  gather_facts: false
+  vars:
+    # the API runs on the controller; see routeros_baseline.yml
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  pre_tasks:
+    - name: Preflight — check for librouteros
+      community.general.python_requirements_info:
+        dependencies: [librouteros]
+      delegate_to: localhost
+      run_once: true
+      register: librouteros_check
+
+    - name: Preflight — librouteros required on the controller
+      ansible.builtin.assert:
+        that: "'librouteros' not in librouteros_check.not_found"
+        fail_msg: >-
+          librouteros is not importable by {{ librouteros_check.python }}.
+          Use the project venv (README, Workstation setup).
+      run_once: true
+
+    - name: Load secrets from sops (API password)
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      delegate_to: localhost
+      run_once: true
+      when: routeros_svc_api_password is not defined
+  roles:
+    - routeros_facts
+    - routeros_remediate
