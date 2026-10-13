@@ -1,9 +1,11 @@
 ---
-# DRAFT — this role has never been executed. See role README.
+# Ran fleet-wide 2026-08-29/30; see role README.
 collector_ip: 44.34.128.45
-# sources allowed to reach the RouterOS API; extend per-run for laptop use:
-#   -e '{"api_extra_sources": ["44.34.128.60/32"]}'
-api_allowed_sources: "{{ [collector_ip ~ '/32'] + (api_extra_sources | default([])) }}"
+# sources allowed to reach the RouterOS API: the declared management sources
+# (inventory group_vars + operators' addresses from sops). api_extra_sources
+# stays as a one-run escape hatch:
+#   -e '{"api_extra_sources": ["192.0.2.60/32"]}'
+api_allowed_sources: "{{ management_sources_effective + (api_extra_sources | default([])) }}"
 
 ntp_servers:
   - 44.34.128.181        # ntp.leb
@@ -33,20 +35,97 @@ dns_allow_remote_requests: false
 
 syslog_topics: [system, error, warning, critical, account]
 
-# users the fleet is EXPECTED to have; anything else is reported by audit.yml
-expected_users:
-  - admin
-  - ansible
-  - oxidized
-  - oxidized-full
-  - mktxp
-# current netops humans — accounts outside expected_users + this list are
-# flagged by the audit. Public keys live in files/operators/ (seichold's from
-# their GitHub profile; ae5au's provided directly by them).
+# ── Accounts ─────────────────────────────────────────────────────────────
+# The only accounts a device may have; the role removes every other one
+# (with its SSH keys). It never creates accounts — the bootstrap/onboarding
+# plays do, with real credentials. Retired 2026-10-13: the shared `hamwan`
+# and `packetbard` accounts and the factory `admin`.
+routeros_service_accounts:
+  ansible: netops-ansible
+  oxidized: netops-backup-ro
+  oxidized-full: netops-backup-full
+  mktxp: mktxp_group
+# netops humans (group full). Public keys live in files/operators/
+# (seichold's from their GitHub profile; ae5au's provided directly by them).
 operators:
   - turnrye
   - seichold
   - ae5au
+# per device, in host_vars: further accounts it may keep
+routeros_extra_accounts: []
+routeros_allowed_accounts: "{{ (routeros_service_accounts | list) + operators + routeros_extra_accounts }}"
+
+# ── Declared menus ───────────────────────────────────────────────────────
+# Each entry is one community.routeros.api_modify call (same field names as
+# /export). With handle_absent_entries: remove, whatever the device has that
+# the list does not name is removed, so the defaults below — empty lists —
+# mean "none of these anywhere". A device with legitimate entries lists them
+# in host_vars, or sets the variable to null to leave that menu unmanaged
+# until they are declared. Pools, mangle rules and OVPN are not managed:
+# DHCP pools and MSS clamping are legitimate on most devices.
+routeros_schedulers: []
+routeros_scripts: []
+routeros_ppp_secrets: []
+# the two built-in profiles cannot be removed
+routeros_ppp_profiles: [{name: default}, {name: default-encryption}]
+routeros_wireguard: []
+routeros_wireguard_peers: []
+routeros_firewall_filter: []
+routeros_firewall_nat: []
+routeros_firewall_raw: []
+routeros_traffic_flow_targets: []
+# single-value menus
+routeros_pptp_server: {enabled: false}
+routeros_l2tp_server: {enabled: false}
+routeros_sstp_server: {enabled: false}
+routeros_socks: {enabled: false}
+routeros_proxy: {enabled: false}
+routeros_traffic_flow: {enabled: false}
+
+# min_version/before_version limit an entry to the RouterOS versions it
+# applies to. Order matters: what runs code (schedulers, scripts) goes first,
+# dependants before what they use (peers before interfaces, accounts before
+# profiles).
+routeros_config:
+  - {path: system scheduler, data: "{{ routeros_schedulers }}", handle_absent_entries: remove}
+  - {path: system script, data: "{{ routeros_scripts }}", handle_absent_entries: remove}
+  - {path: interface pptp-server server, data: ["{{ routeros_pptp_server }}"]}
+  - {path: interface l2tp-server server, data: ["{{ routeros_l2tp_server }}"]}
+  - {path: interface sstp-server server, data: ["{{ routeros_sstp_server }}"]}
+  - {path: ppp secret, data: "{{ routeros_ppp_secrets }}", handle_absent_entries: remove}
+  - {path: ppp profile, data: "{{ routeros_ppp_profiles }}", handle_absent_entries: remove}
+  - {path: interface wireguard peers, data: "{{ routeros_wireguard_peers }}", handle_absent_entries: remove}
+  - {path: interface wireguard, data: "{{ routeros_wireguard }}", handle_absent_entries: remove}
+  # menus without a key field match whole entries: a declared rule must list
+  # every field it has (as /export prints it), or the extra ones are removed
+  - {path: ip firewall filter, data: "{{ routeros_firewall_filter }}", handle_absent_entries: remove,
+     handle_entries_content: remove_as_much_as_possible, ensure_order: true}
+  - {path: ip firewall nat, data: "{{ routeros_firewall_nat }}", handle_absent_entries: remove,
+     handle_entries_content: remove_as_much_as_possible, ensure_order: true}
+  - {path: ip firewall raw, data: "{{ routeros_firewall_raw }}", handle_absent_entries: remove,
+     handle_entries_content: remove_as_much_as_possible, ensure_order: true}
+  - {path: ip socks, data: ["{{ routeros_socks }}"]}
+  - {path: ip proxy, data: ["{{ routeros_proxy }}"]}
+  - {path: ip traffic-flow, data: ["{{ routeros_traffic_flow }}"]}
+  - {path: ip traffic-flow target, data: "{{ routeros_traffic_flow_targets }}", handle_absent_entries: remove,
+     handle_entries_content: remove_as_much_as_possible}
+  # DDNS publishes the router's address. From 7.17 the property takes only
+  # yes|auto (`no` is rejected); auto stays off without back-to-home VPN.
+  - {path: ip cloud, data: [{ddns-enabled: auto}], min_version: "7.17"}
+  - {path: ip cloud, data: [{ddns-enabled: false}], before_version: "7.17"}
+  # attackers cut the memory log to 1 line to hide their tracks
+  - {path: system logging action, data: [{name: memory, target: memory, memory-lines: 1000}]}
+
+# Regular files (not disks, directories or staged packages) are removed after
+# a copy to routeros_files_evidence_dir, made over scp as an operator
+# (ansible_user, $USER by default). Keep a file by listing its name here.
+routeros_files: []
+routeros_files_evidence_dir: "{{ lookup('env', 'HOME') }}/netops-evidence"
+
+# SSH: only key logins (from 7.21; the role first checks every remaining
+# SSH account holds a key, and stops otherwise) and no port forwarding.
+routeros_ssh_password_login: false
+routeros_ssh_forwarding: false
 
 service_groups:
   - {name: netops-backup-ro, policy: "ssh,read"}

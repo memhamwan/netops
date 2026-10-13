@@ -1,0 +1,9 @@
+---
+# NAT for the T-Mobile uplink fail-open and the private client LAN (from the
+# Oxidized export).
+routeros_firewall_nat:
+  - {action: masquerade, chain: srcnat, out-interface: wan-uplink}
+  - {action: masquerade, chain: srcnat, src-address: 10.0.0.0/24}
+# the (disabled) WireGuard link to er1.atl: unmanaged until declared
+routeros_wireguard: null
+routeros_wireguard_peers: null

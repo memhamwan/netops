@@ -1,8 +1,9 @@
 ---
-# Service groups and group membership. Deliberately does NOT create users:
+# Service groups, accounts and their keys. Deliberately does NOT create users:
 # creation (with random throwaway passwords + ssh-key upload) stays in the
 # bootstrap/onboarding plays, so this role can never produce a passwordless
-# account. It corrects group/policy drift on accounts that already exist.
+# account. It corrects group/policy drift on accounts that already exist and
+# removes every account that is not declared (routeros_allowed_accounts).
 # expand each short policy list to RouterOS's canonical stored form (granted
 # then negated, universe order) so the string comparison is idempotent —
 # see routeros_policy_universe in defaults
@@ -26,8 +27,6 @@
     data: "{{ service_groups_expanded | default([]) }}"
 
 # read-only query; check_mode false so --check runs still get real data
-# (community.routeros.api would otherwise be skipped, and the membership
-# and audit logic below would choke on the skip placeholder)
 - name: Fetch current users
   community.routeros.api:
     path: user
@@ -41,10 +40,36 @@
   community.routeros.api_modify:
     path: user
     data:
-      - {name: "{{ item.name }}", group: "{{ item.group }}"}
-  loop:
-    - {name: oxidized, group: netops-backup-ro}
-    - {name: oxidized-full, group: netops-backup-full}
-    - {name: mktxp, group: mktxp_group}
-    - {name: ansible, group: netops-ansible}
-  when: item.name in (baseline_users.msg | map(attribute='name') | list)
+      - {name: "{{ item.key }}", group: "{{ item.value }}"}
+  loop: "{{ routeros_service_accounts | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.key in baseline_present_users
+  vars:
+    baseline_present_users: "{{ baseline_users.msg | map(attribute='name') | list }}"
+
+# the data is the declared accounts this device already has, so nothing is
+# ever added; everything else (attacker accounts, admin, hamwan, packetbard)
+# is removed. Their open sessions last until they time out or a reboot.
+- name: Remove undeclared accounts
+  community.routeros.api_modify:
+    path: user
+    handle_absent_entries: remove
+    data: >-
+      {{ baseline_users.msg | map(attribute='name') | select('in', routeros_allowed_accounts)
+         | map('community.general.dict_kv', 'name') | list }}
+
+# keys outlive their account on RouterOS; remove every key whose owner is not
+# a declared account. (Extra keys on a declared account: onboard_device.yml
+# -e rotate_operator_keys=true replaces them.)
+- name: Remove SSH keys of undeclared accounts
+  community.routeros.api_modify:
+    path: user ssh-keys
+    handle_absent_entries: remove
+    handle_entries_content: remove_as_much_as_possible
+    data: []
+    restrict:
+      - field: user
+        values: "{{ routeros_allowed_accounts }}"
+        invert: true
+  when: routeros_version is version('7.15', '>=')

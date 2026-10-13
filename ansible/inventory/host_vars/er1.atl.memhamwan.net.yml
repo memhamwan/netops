@@ -1,0 +1,11 @@
+---
+# The edge router carries legitimate PPP accounts (SSTP links from the
+# sites, including r1.sco's oob-sco backbone session), WireGuard peers and its
+# containment filter rules. Left unmanaged (null) until they are declared
+# here from its export — disabling the SSTP server would cut the backbone.
+routeros_ppp_secrets: null
+routeros_ppp_profiles: null
+routeros_wireguard: null
+routeros_wireguard_peers: null
+routeros_firewall_filter: null
+routeros_sstp_server: null
