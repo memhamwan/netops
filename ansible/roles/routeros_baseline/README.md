@@ -1,10 +1,23 @@
-# routeros_baseline — DRAFT, not yet executed
+# routeros_baseline
 
 **Execution gate: no automation-driven router changes without Ryan's PR
 review.** All three device playbooks (`bootstrap_ansible_user.yml`,
 `onboard_device.yml`, `routeros_baseline.yml`) refuse to run without
-`-e confirm_execution=true`, and that flag must not be used until this role
-has been reviewed. Nothing in these plays has ever run against a device.
+`-e confirm_execution=true`; use it only for a change that has been reviewed,
+and start with `--check --diff`.
+
+**What has run.** All three plays ran fleet-wide on 2026-08-29/30 against the
+devices reachable then: the `ansible` account, the backup and mktxp accounts,
+operator accounts and keys, the per-device api-ssl certificates, and the
+baseline itself (service lockdown with plaintext 8728 disabled, logging, NTP,
+identity). The api-ssl cut-over completed that day (netops PR #12); fixes
+found during the runs are in the 2026-08-29/30 history (e.g. the api-ssl
+certificate usage found on sec3.sco). Device history on several routers shows
+the `ansible` account making those SSH, NTP and service changes. The DNS
+resolver tasks were added afterwards (PR #23) and have no recorded run. Nothing has run
+since the September 2026 compromise; devices changed underneath, so treat the
+first post-incident run as a first run (`--check --diff`, one clean device).
+Devices in the `quarantined` lifecycle group are never targeted.
 
 Replaces the `device-onboarding/*.sh` scripts plus accumulated hand-fixes.
 Account *creation* lives in the two SSH-based plays —

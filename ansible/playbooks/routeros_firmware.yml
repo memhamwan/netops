@@ -1,5 +1,5 @@
 ---
-# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+# Router-changing play: requires -e confirm_execution=true (review gate).
 #
 # ===========================================================================
 # WHAT THIS DOES
@@ -98,17 +98,20 @@
 # the run stops before APPLY touches anything. Fix that device or scope it out
 # with -l, then re-run.
 
+- name: Lifecycle — merge the private quarantine list (contacts no device)
+  ansible.builtin.import_playbook: lifecycle.yml
+
 # ---------------------------------------------------------------------------
 # Play 1 — PLAN: order the in-scope hosts deepest-first into _firmware_run.
 # ---------------------------------------------------------------------------
 - name: RouterOS firmware — plan the serial upgrade order
-  hosts: 'routeros:!excluded:!expected_down'  # lifecycle groups: see inventory
+  hosts: 'routeros:!excluded:!expected_down:!quarantined'  # lifecycle groups: see inventory
   gather_facts: false
   tasks:
-    - name: Execution gate — this play is a draft pending review
+    - name: Execution gate — router changes need an explicit, reviewed run
       ansible.builtin.assert:
         that: confirm_execution | default(false) | bool
-        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+        fail_msg: "This play changes routers. Pass -e confirm_execution=true for a reviewed run."
       run_once: true
 
     - name: Load the firmware topology (RoMON-derived ordering)
@@ -186,10 +189,10 @@
     ansible_command_timeout: "{{ routeros_command_timeout | default(120) }}"
     _fw_phase: check
   pre_tasks:
-    - name: Execution gate — this play is a draft pending review
+    - name: Execution gate — router changes need an explicit, reviewed run
       ansible.builtin.assert:
         that: confirm_execution | default(false) | bool
-        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+        fail_msg: "This play changes routers. Pass -e confirm_execution=true for a reviewed run."
 
     # libssh negotiates the ssh-rsa host key and cannot prompt on first contact;
     # without a pinned rsa entry it fails with an inscrutable "Host is unknown".
@@ -267,10 +270,10 @@
     ansible_command_timeout: "{{ routeros_command_timeout | default(120) }}"
     _fw_phase: apply
   pre_tasks:
-    - name: Execution gate — this play is a draft pending review
+    - name: Execution gate — router changes need an explicit, reviewed run
       ansible.builtin.assert:
         that: confirm_execution | default(false) | bool
-        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+        fail_msg: "This play changes routers. Pass -e confirm_execution=true for a reviewed run."
 
     - name: Preflight — look up pinned host key
       ansible.builtin.command: ssh-keygen -F "[{{ inventory_hostname }}]:{{ ansible_port | default(222) }}"

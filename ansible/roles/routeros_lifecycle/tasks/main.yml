@@ -1,0 +1,71 @@
+---
+# Merges the private half of the lifecycle data into this run.
+#
+# The public inventory declares the `quarantined` group but lists no hosts in
+# it: which devices are hostile is incident detail, so the list lives in sops
+# (`quarantined_hosts`) next to the operators' addresses
+# (`management_sources_private`). Hosts may also be listed in the inventory
+# group directly; both sources are honoured.
+#
+# Fails closed: a run that cannot read the list stops, instead of treating
+# every device as trusted and sending it credentials. Contacts no device.
+- name: Load private lifecycle data from sops
+  community.sops.load_vars:
+    file: "{{ routeros_lifecycle_secrets_file }}"
+  delegate_to: localhost
+  run_once: true
+  when: quarantined_hosts is not defined or management_sources_private is not defined
+
+- name: Private lifecycle data is present
+  ansible.builtin.assert:
+    that:
+      - quarantined_hosts is defined
+      - management_sources_private is defined
+      - quarantined_hosts is sequence and quarantined_hosts is not string
+      - management_sources_private is sequence and management_sources_private is not string
+    fail_msg: >-
+      {{ routeros_lifecycle_secrets_file }} needs `quarantined_hosts` and
+      `management_sources_private` (lists; empty is allowed). Add them with
+      `sops set secrets/secrets.sops.yaml '["quarantined_hosts"]' '[]'` and
+      `sops set secrets/secrets.sops.yaml '["management_sources_private"]' '["<your-ip>/32"]'`.
+    quiet: true
+  run_once: true
+
+- name: Quarantined hosts are fleet devices
+  ansible.builtin.assert:
+    that: quarantined_hosts | difference(groups['routeros']) | length == 0
+    fail_msg: >-
+      quarantined_hosts names hosts that are not in the routeros inventory:
+      {{ quarantined_hosts | difference(groups['routeros']) | join(', ') }}.
+      Use full inventory names (e.g. r1.ftn.memhamwan.net).
+    quiet: true
+  run_once: true
+
+- name: Operator sources are CIDRs no wider than /{{ routeros_lifecycle_min_prefix }}
+  ansible.builtin.assert:
+    that:
+      - item is match('^([0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}$')
+      - (item.split('/')[1] | int) >= (routeros_lifecycle_min_prefix | int)
+    fail_msg: "management_sources_private entry {{ item }} is not an IPv4 CIDR of /{{ routeros_lifecycle_min_prefix }} or longer"
+    quiet: true
+  loop: "{{ management_sources_private }}"
+  run_once: true
+
+# add_host on an existing host adds the group membership and keeps its vars,
+# so later plays' `:!quarantined` patterns and the netops_host templates see
+# the full list. Runs for the whole list regardless of --limit.
+- name: Merge the quarantine list into the quarantined group
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    groups: quarantined
+  loop: "{{ quarantined_hosts }}"
+  run_once: true
+  changed_when: false
+
+- name: Report quarantined hosts this run will not touch
+  ansible.builtin.debug:
+    msg: >-
+      Quarantined, skipped by every device play:
+      {{ ansible_play_hosts_all | intersect(groups['quarantined']) | join(', ') }}
+  when: ansible_play_hosts_all | intersect(groups['quarantined']) | length > 0
+  run_once: true

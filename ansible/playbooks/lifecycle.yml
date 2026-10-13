@@ -1,0 +1,14 @@
+---
+# Imported first by every device playbook. Merges the private quarantine list
+# (sops) into the `quarantined` group so the device plays' `:!quarantined`
+# patterns hold, and loads the operators' management sources. Contacts no
+# device: every task runs on the controller. Fails the run when the private
+# data is missing (see roles/routeros_lifecycle).
+- name: Lifecycle — merge the private quarantine list
+  hosts: routeros
+  gather_facts: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  roles:
+    - routeros_lifecycle

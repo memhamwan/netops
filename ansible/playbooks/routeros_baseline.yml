@@ -1,13 +1,19 @@
 ---
-# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+# Router-changing play: requires -e confirm_execution=true (review gate).
+# Ran fleet-wide 2026-08-29/30 against the devices reachable then.
 #
 # Applies the routeros_baseline role over the RouterOS API as the dedicated
 # `ansible` user (created by bootstrap_ansible_user.yml). API credentials come
-# from sops — the operator's age key decrypts at run time; devices' API is
-# ACL'd to the collector, so run from rpi.sco or pass api_extra_sources.
-# First real run should be: --check --diff -e confirm_execution=true
+# from sops — the operator's age key decrypts at run time. The API is
+# allow-listed to management_sources_effective (inventory group_vars + the
+# operators' addresses in sops); until a device carries that list, run from
+# rpi.sco or tunnel through it.
+# Start every change with: --check --diff -e confirm_execution=true
+- name: Lifecycle — merge the private quarantine list (contacts no device)
+  ansible.builtin.import_playbook: lifecycle.yml
+
 - name: RouterOS fleet baseline
-  hosts: 'routeros:!excluded:!expected_down'  # lifecycle groups: see inventory
+  hosts: 'routeros:!excluded:!expected_down:!quarantined'  # lifecycle groups: see inventory
   gather_facts: false
   vars:
     # play var, not the `connection:` keyword: the inventory's group-level
@@ -29,10 +35,10 @@
       port: 8729
       validate_certs: false
   pre_tasks:
-    - name: Execution gate — this play is a draft pending review
+    - name: Execution gate — router changes need an explicit, reviewed run
       ansible.builtin.assert:
         that: confirm_execution | default(false) | bool
-        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+        fail_msg: "This play changes routers. Pass -e confirm_execution=true for a reviewed run."
       run_once: true
 
     # the api modules run on the controller (connection: local) and need

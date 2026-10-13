@@ -243,3 +243,93 @@
       vars:
         ports_text: "{{ lookup('file', render_dir ~ '/10-netops-ports.conf') }}"
         hardening_text: "{{ lookup('file', render_dir ~ '/20-hardening.conf') }}"
+
+# Quarantine: a quarantined host must vanish from the credentialed consumers
+# (mktxp, Oxidized) yet stay probed under its real site. Real membership is
+# private (sops), so this uses a synthetic host and renders into its own
+# directory. Keep this play LAST: add_host changes the in-memory inventory for
+# every later play.
+- name: Render the quarantine variant for validation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build/rendered/quarantine"
+    mktxp_password: dummy
+    ci_quarantined: ci-quarantined.sco.memhamwan.net
+  tasks:
+    - name: Load netops_host defaults (templates reference role vars)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/netops_host/defaults/main.yml"
+
+    - name: Add a synthetic SCO device
+      ansible.builtin.add_host:
+        name: "{{ ci_quarantined }}"
+        groups: [routeros, sco]
+        ip: 192.0.2.10
+      changed_when: false
+
+    - name: Quarantine it through the real lifecycle role
+      ansible.builtin.include_role:
+        name: routeros_lifecycle
+      vars:
+        quarantined_hosts: ["{{ ci_quarantined }}"]
+        management_sources_private: [192.0.2.0/24]
+
+    - name: Render directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render the inventory-driven consumers
+      ansible.builtin.template:
+        src: "../roles/netops_host/templates/{{ item }}.j2"
+        dest: "{{ render_dir }}/{{ item }}"
+        mode: "0644"
+      loop: [router.db, mktxp.conf, icmp-routeros.yml, config.alloy]
+
+    - name: Quarantined host is never credentialed, still probed under its site, still logged
+      ansible.builtin.assert:
+        that:
+          - "'ci-quarantined' not in lookup('file', render_dir ~ '/router.db')"
+          - "'ci-quarantined' not in lookup('file', render_dir ~ '/mktxp.conf')"
+          - "'{site: sco, device: ci-quarantined.sco}' in lookup('file', render_dir ~ '/icmp-routeros.yml')"
+          - "'ci-quarantined' in lookup('file', render_dir ~ '/config.alloy')"
+          # the real fleet is untouched by the synthetic quarantine
+          - "'r1.sco.memhamwan.net:routeros' in lookup('file', render_dir ~ '/router.db')"
+        quiet: true
+
+    - name: An unknown host in the quarantine list fails the run
+      block:
+        - name: Quarantine a host that is not in the inventory
+          ansible.builtin.include_role:
+            name: routeros_lifecycle
+          vars:
+            quarantined_hosts: [not-a-device.memhamwan.net]
+            management_sources_private: []
+        - name: Unreachable — the lifecycle role should have failed
+          ansible.builtin.fail:
+            msg: routeros_lifecycle accepted a quarantine entry that is not a fleet device
+      rescue:
+        - name: The failure is the expected assertion
+          ansible.builtin.assert:
+            that: "'not in the routeros inventory' in ansible_failed_result.msg"
+            quiet: true
+
+    - name: An over-broad operator source fails the run
+      block:
+        - name: Declare 0.0.0.0/0 as an operator source
+          ansible.builtin.include_role:
+            name: routeros_lifecycle
+          vars:
+            quarantined_hosts: []
+            management_sources_private: [0.0.0.0/0]
+        - name: Unreachable — the lifecycle role should have failed
+          ansible.builtin.fail:
+            msg: routeros_lifecycle accepted 0.0.0.0/0 as a management source
+      rescue:
+        # a looped assert reports per item, under results
+        - name: The failure is the expected assertion
+          ansible.builtin.assert:
+            that: "'is not an IPv4 CIDR' in (ansible_failed_result.results | map(attribute='msg') | join(' '))"
+            quiet: true

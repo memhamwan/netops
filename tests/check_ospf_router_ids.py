@@ -8,7 +8,10 @@ exports carry every device's router-id; this check makes that drift a CI
 failure instead of an incident.
 
 The checked set mirrors what Oxidized actually backs up: the `routeros`
-group minus the `excluded` and `expected_down` lifecycle groups. Every host
+group minus the `excluded`, `expected_down` and `quarantined` lifecycle
+groups. Quarantine membership is normally private and merged at run time,
+so in CI the group is usually empty and a quarantined host's last export
+stays in the check, which is harmless. Every host
 in that set MUST have an export — a missing file means the audit data is
 incomplete, and a silent skip here would let a duplicate hide. Stale exports
 of hosts Oxidized intentionally no longer fetches (renamed devices,
@@ -49,7 +52,7 @@ def active_routeros_hosts(path):
     with open(path) as fh:
         children = yaml.safe_load(fh)["all"]["children"]
     active = hosts_of(children.get("routeros"))
-    for lifecycle in ("excluded", "expected_down"):
+    for lifecycle in ("excluded", "expected_down", "quarantined"):
         active -= hosts_of(children.get(lifecycle, {}))
     return active
 

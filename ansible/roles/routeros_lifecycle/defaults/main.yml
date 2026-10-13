@@ -1,0 +1,10 @@
+---
+# Where the private lifecycle data lives (sops/age). Two keys are read:
+#   quarantined_hosts          — inventory hostnames to treat as hostile
+#   management_sources_private — operators' CIDRs for the management allow lists
+# Both must exist (an empty list is fine); see the role tasks.
+routeros_lifecycle_secrets_file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+
+# Shortest prefix accepted in management_sources_private. A typo such as
+# 0.0.0.0/0 would open SSH and the API to the internet on every device.
+routeros_lifecycle_min_prefix: 16

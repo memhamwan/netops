@@ -12,5 +12,13 @@
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
       become: false
+
+    # before any template renders: mktxp.conf and router.db must leave out
+    # the quarantined hosts, whose membership is private (sops)
+    - name: Merge the private quarantine list
+      ansible.builtin.include_role:
+        name: routeros_lifecycle
+        apply:
+          become: false
   roles:
     - netops_host
