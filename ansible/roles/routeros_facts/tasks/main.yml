@@ -1,0 +1,53 @@
+---
+# Read-only snapshot of one device over the API (every menu the audit and
+# the remediation planner use), normalized and saved for the later roles.
+# The reading and redaction live in lib/routeros_convergence so the netops
+# host's scheduled audit runs the very same code.
+- name: Facts directory
+  ansible.builtin.file:
+    path: "{{ routeros_facts_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+  check_mode: false
+
+# read-only; check_mode false so --check runs still read the device. The
+# password goes through the environment, never argv.
+- name: Read the device over the API
+  ansible.builtin.command:
+    argv: >-
+      {{ [ansible_playbook_python, '-m', 'routeros_convergence', 'gather',
+          '--name', inventory_hostname, '--address', routeros_api_address,
+          '--port', routeros_api_port | string, '--user', routeros_api_user,
+          '--timeout', routeros_api_timeout | string,
+          '--out', routeros_facts_dir ~ '/' ~ inventory_hostname ~ '.json']
+         + ([] if routeros_api_tls | bool else ['--no-tls']) }}
+  environment:
+    PYTHONPATH: "{{ playbook_dir }}/../lib"
+    ROUTEROS_API_PASSWORD: "{{ routeros_api_password }}"
+  delegate_to: localhost
+  register: routeros_facts_read
+  changed_when: false
+  check_mode: false
+  failed_when: routeros_facts_read.rc != 0 and routeros_facts_required | bool
+
+- name: Load the snapshot
+  ansible.builtin.set_fact:
+    routeros_facts: "{{ lookup('file', routeros_facts_dir ~ '/' ~ inventory_hostname ~ '.json') | from_json }}"
+    routeros_facts_ok: true
+  when: routeros_facts_read.rc == 0
+
+- name: Record an unreadable device
+  ansible.builtin.set_fact:
+    routeros_facts_ok: false
+    routeros_facts_error: "{{ routeros_facts_read.stderr | default('') }}"
+  when: routeros_facts_read.rc != 0
+
+- name: Report the snapshot
+  ansible.builtin.debug:
+    msg: >-
+      {{ ('RouterOS ' ~ routeros_facts.version ~ ' ' ~ routeros_facts.board
+          ~ ', ' ~ (routeros_facts.menus | length) ~ ' menus read'
+          ~ ((', not available: ' ~ (routeros_facts.errors | list | join(', '))) if routeros_facts.errors else ''))
+         if routeros_facts_ok else 'NOT READ: ' ~ routeros_facts_error }}

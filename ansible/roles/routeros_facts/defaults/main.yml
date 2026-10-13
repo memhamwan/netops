@@ -1,0 +1,19 @@
+---
+# Snapshots land here, one JSON file per device (gitignored: ansible/build/).
+# They hold no secrets (redacted at read time) but do name accounts, files and
+# rules, so keep them private.
+routeros_facts_dir: "{{ playbook_dir }}/../build/facts"
+
+# API connection. The inventory IP, like monitoring, so DNS trouble cannot
+# hide a device; routeros_api_address overrides (lab, tunnels).
+routeros_api_address: "{{ ip | default(inventory_hostname) }}"
+routeros_api_port: 8729
+routeros_api_tls: true
+routeros_api_user: ansible
+routeros_api_password: "{{ routeros_svc_api_password }}"
+routeros_api_timeout: 30
+
+# false: an unreadable device is recorded (routeros_facts_ok: false) instead
+# of failing the host — the audit reports it. Plays that change devices keep
+# the default and stop.
+routeros_facts_required: true

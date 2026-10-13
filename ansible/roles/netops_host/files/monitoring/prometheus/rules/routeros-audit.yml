@@ -1,0 +1,56 @@
+groups:
+  # Drift of RouterOS devices from their declared state, from the scheduled
+  # read-only audit (netops-routeros-audit.timer, textfile metrics). The
+  # metrics are counts only; names live in /var/lib/netops/audit/report.json
+  # on rpi.sco, or run playbooks/routeros_audit.yml -l <device>.
+  - name: routeros-audit
+    rules:
+      # rogue accounts or keys, C2 schedulers, proxy/VPN kits, services open
+      # to the world, tampered logging, a version below the security floor
+      - alert: RouterOSAuditCritical
+        expr: max by (device) (routeros_audit_findings{severity="critical"}) > 0
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.device }}: {{ $value }} critical drift finding(s)"
+          description: "Details: /var/lib/netops/audit/report.json on rpi.sco, or ansible-playbook playbooks/routeros_audit.yml -l {{ $labels.device }}.memhamwan.net"
+      - alert: RouterOSAuditDrift
+        expr: max by (device) (routeros_audit_findings{severity="warning"}) > 0
+        for: 6h
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.device }}: {{ $value }} drift finding(s) for 6h"
+      # Answers ICMP but the read-only audit account cannot read it: its
+      # credentials were changed or its access blocked. In September 2026 the
+      # loss of read access was the first visible sign of a takeover.
+      - alert: RouterOSAuditUnreadable
+        expr: >-
+          max by (device) (routeros_audit_up) == 0
+          and on(device) max by (device) (probe_success{job="blackbox-icmp"}) == 1
+        for: 1h
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.device }} answers ICMP but the audit cannot read it for 1h"
+          description: "Credentials changed or access blocked. Treat as a possible takeover until shown otherwise."
+
+  - name: routeros-audit-pipeline
+    rules:
+      - alert: RouterOSAuditStale
+        expr: time() - routeros_audit_last_run_timestamp_seconds > 7200
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "RouterOS audit has not completed a run in >2h"
+      # staleness evaluates empty when the metric was never written; absent()
+      # + a long `for:` is the startup grace period (as for the backups)
+      - alert: RouterOSAuditMetricMissing
+        expr: absent(routeros_audit_last_run_timestamp_seconds)
+        for: 2h
+        labels:
+          severity: page
+        annotations:
+          summary: "RouterOS audit metric absent for >2h — timer or metrics broken"

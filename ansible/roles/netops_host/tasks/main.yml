@@ -9,9 +9,9 @@
 
 # docker and sops are deliberately NOT installed here (install method is a
 # host-bootstrap decision — see README); everything apt-safe is
-- name: Host packages (rsync/jq/git/curl for sync + backup/metrics scripts, iptables for the firewall unit)
+- name: Host packages (rsync/jq/git/curl for sync + backup/metrics scripts, iptables for the firewall unit, python3-venv for the RouterOS audit)
   ansible.builtin.apt:
-    name: [rsync, jq, git, curl, iptables]
+    name: [rsync, jq, git, curl, iptables, python3-venv]
     state: present
 
 - name: Preflight — docker compose and sops present (README bootstrap installs them)
@@ -240,6 +240,70 @@
   loop:
     - netops-full-backup.timer
     - netops-oxidized-metrics.timer
+
+# ── Scheduled RouterOS audit ────────────────────────────────────────────
+# Same comparison as playbooks/routeros_audit.yml, every 30 minutes, as the
+# read-only mktxp API account (no write credentials on this host for it).
+# Findings become textfile metrics (counts only — Grafana is public) and a
+# root-only report at /var/lib/netops/audit/report.json.
+- name: RouterOS audit directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "0"
+    group: "0"
+    mode: "0700"
+  loop: ["{{ netops_opt }}/audit", "{{ netops_opt }}/audit/lib", "{{ netops_var }}/audit"]
+
+- name: RouterOS audit library (ansible/lib/routeros_convergence)
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../lib/routeros_convergence"
+    dest: "{{ netops_opt }}/audit/lib/"
+    delete: true
+    owner: false
+    group: false
+    rsync_opts: ["--exclude=__pycache__"]
+
+- name: RouterOS audit venv (librouteros)
+  ansible.builtin.pip:
+    name: "librouteros{{ netops_audit_librouteros_version }}"
+    virtualenv: "{{ netops_opt }}/audit/venv"
+    virtualenv_command: python3 -m venv
+
+- name: Render the audit targets (inventory + declared state, never quarantined)
+  ansible.builtin.template:
+    src: routeros-audit-targets.json.j2
+    dest: "{{ netops_var }}/audit/targets.json"
+    owner: "0"
+    group: "0"
+    mode: "0600"
+
+# no_log: the file holds the mktxp API password
+- name: Write the audit credentials (the read-only mktxp account)
+  ansible.builtin.copy:
+    content: |
+      ROUTEROS_AUDIT_USER=mktxp
+      ROUTEROS_AUDIT_PASSWORD={{ mktxp_password }}
+    dest: "{{ netops_var }}/secrets/routeros-audit.env"
+    owner: "0"
+    group: "0"
+    mode: "0400"
+  no_log: true
+
+- name: Install the audit units
+  ansible.builtin.copy:
+    src: "audit/{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop: [netops-routeros-audit.service, netops-routeros-audit.timer]
+  notify: systemd reload
+
+- name: Enable the audit timer
+  ansible.builtin.systemd:
+    name: netops-routeros-audit.timer
+    enabled: true
+    state: started
+    daemon_reload: true
 
 # --remove-orphans reconciles the running state to the compose file, so a
 # service removed from the file (e.g. the node-exporter now run natively by

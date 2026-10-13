@@ -1,0 +1,57 @@
+---
+# Read-only drift audit of the fleet against its declared state
+# (inventory/group_vars/routeros.yml + host_vars). Safe any time: it reads
+# devices over the API and changes nothing. Quarantined devices are never
+# logged in to; RoMON from the core and port probes stand in for them.
+#
+#   ansible-playbook playbooks/routeros_audit.yml [-l r1.sco.memhamwan.net]
+#
+# Reports: ansible/build/audit/ (per device JSON, fleet.txt, fleet.json,
+# routeros-audit.prom). The netops host runs the same comparison on a timer
+# with the read-only mktxp account (roles/netops_host, audit/).
+- name: Lifecycle — merge the private quarantine list (contacts no device)
+  ansible.builtin.import_playbook: lifecycle.yml
+
+- name: RouterOS audit — read each device and compare (read-only)
+  hosts: 'routeros:!excluded:!expected_down:!quarantined'  # lifecycle groups: see inventory
+  gather_facts: false
+  vars:
+    # the API runs on the controller; see routeros_baseline.yml
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    routeros_facts_required: false
+  pre_tasks:
+    - name: Preflight — check for librouteros
+      community.general.python_requirements_info:
+        dependencies: [librouteros]
+      delegate_to: localhost
+      run_once: true
+      register: librouteros_check
+
+    - name: Preflight — librouteros required on the controller
+      ansible.builtin.assert:
+        that: "'librouteros' not in librouteros_check.not_found"
+        fail_msg: >-
+          librouteros is not importable by {{ librouteros_check.python }}.
+          Use the project venv (README, Workstation setup).
+      run_once: true
+
+    - name: Load secrets from sops (API password)
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
+      delegate_to: localhost
+      run_once: true
+      when: routeros_svc_api_password is not defined
+  roles:
+    - routeros_facts
+    - routeros_audit
+  post_tasks:
+    # once, after every device: the devices in this run's scope, including
+    # the ones this play must not log in to
+    - name: Fleet view
+      ansible.builtin.include_role:
+        name: routeros_audit
+        tasks_from: summary
+        apply:
+          run_once: true
+          delegate_to: localhost

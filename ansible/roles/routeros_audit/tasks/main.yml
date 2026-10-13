@@ -1,0 +1,48 @@
+---
+# Compare one device's snapshot (routeros_facts) with its declared state and
+# report the drift. Read-only: the comparison runs on the controller.
+- name: Declared state is usable
+  ansible.builtin.assert:
+    that: problems | length == 0
+    fail_msg: "{{ problems | join('; ') }}"
+    quiet: true
+  vars:
+    problems: "{{ routeros_declared | routeros_declared_problems }}"
+
+- name: Compare with the declared state
+  ansible.builtin.set_fact:
+    routeros_audit: "{{ routeros_facts | routeros_audit_report(routeros_declared) }}"
+  when: routeros_facts_ok | default(false)
+
+- name: Report directory
+  ansible.builtin.file:
+    path: "{{ routeros_audit_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+  check_mode: false
+
+- name: Save the report
+  ansible.builtin.copy:
+    content: "{{ routeros_audit | to_nice_json }}"
+    dest: "{{ routeros_audit_dir }}/{{ inventory_hostname }}.json"
+    mode: "0600"
+  delegate_to: localhost
+  check_mode: false
+  changed_when: false
+  when: routeros_audit is defined
+
+# changed (yellow) when there is anything to act on, so a finding cannot hide
+# in a wall of green; nothing on the device is modified
+- name: Findings (yellow = attention needed, nothing modified)
+  ansible.builtin.debug:
+    msg: "{{ (routeros_audit | routeros_audit_text).splitlines() }}"
+  changed_when: routeros_audit.counts.critical + routeros_audit.counts.warning > 0
+  when: routeros_audit is defined
+
+- name: RoMON view from the core
+  ansible.builtin.include_tasks: romon.yml
+  when:
+    - routeros_audit_romon | bool
+    - inventory_hostname == routeros_audit_romon_core

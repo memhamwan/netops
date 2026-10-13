@@ -100,7 +100,7 @@ loki.relabel "journal" {
 	forward_to = []
 	rule {
 		source_labels = ["__journal__systemd_unit"]
-		regex         = "(docker|netops-full-backup|netops-oxidized-metrics|netops-firewall)\\.service"
+		regex         = "(docker|netops-full-backup|netops-oxidized-metrics|netops-firewall|netops-routeros-audit)\\.service"
 		action        = "keep"
 	}
 	rule {

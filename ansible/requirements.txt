@@ -18,3 +18,4 @@ ansible-pylibssh~=1.4
 # lint/CI (same versions locally and in the workflow)
 ansible-lint>=25
 yamllint>=1.35
+pytest>=8  # tests/routeros: the routeros_convergence library

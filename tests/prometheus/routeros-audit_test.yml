@@ -1,0 +1,115 @@
+---
+# promtool unit tests for the RouterOS audit rules.
+#   promtool test rules tests/prometheus/routeros-audit_test.yml
+# NOTE: promtool resolves rule_files relative to THIS FILE (see
+# site-services_test.yml).
+rule_files:
+  - ../../ansible/roles/netops_host/files/monitoring/prometheus/rules/routeros-audit.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── critical drift pages per device; zero-valued devices stay silent ──
+  - interval: 1m
+    name: critical findings page per device, clean devices do not
+    input_series:
+      - series: 'routeros_audit_findings{job="node",host="rpi.sco",site="sco",device="r1.mno",severity="critical"}'
+        values: "3+0x60"
+      - series: 'routeros_audit_findings{job="node",host="rpi.sco",site="sco",device="r1.sco",severity="critical"}'
+        values: "0+0x60"
+      - series: 'routeros_audit_findings{job="node",host="rpi.sco",site="sco",device="r1.sco",severity="warning"}'
+        values: "2+0x60"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RouterOSAuditCritical
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: RouterOSAuditCritical
+        exp_alerts:
+          - exp_labels:
+              device: r1.mno
+              severity: page
+            exp_annotations:
+              summary: "r1.mno: 3 critical drift finding(s)"
+              description: "Details: /var/lib/netops/audit/report.json on rpi.sco, or ansible-playbook playbooks/routeros_audit.yml -l r1.mno.memhamwan.net"
+      # warnings wait 6h
+      - eval_time: 50m
+        alertname: RouterOSAuditDrift
+        exp_alerts: []
+
+  # 1m samples: sparser ones go stale between samples and reset `for:`
+  - interval: 1m
+    name: warnings notify after 6h
+    input_series:
+      - series: 'routeros_audit_findings{job="node",device="r1.sco",severity="warning"}'
+        values: "2+0x450"
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: RouterOSAuditDrift
+        exp_alerts:
+          - exp_labels:
+              device: r1.sco
+              severity: warn
+            exp_annotations:
+              summary: "r1.sco: 2 drift finding(s) for 6h"
+
+  # ── unreadable only matters when the device is up ──
+  - interval: 1m
+    name: unreadable but reachable pages, unreadable and down does not
+    input_series:
+      - series: 'routeros_audit_up{job="node",device="hil.sco"}'
+        values: "0+0x90"
+      - series: 'probe_success{job="blackbox-icmp",device="hil.sco",site="sco",instance="44.34.128.35"}'
+        values: "1+0x90"
+      - series: 'routeros_audit_up{job="node",device="r2.mno"}'
+        values: "0+0x90"
+      - series: 'probe_success{job="blackbox-icmp",device="r2.mno",site="mno",instance="44.34.129.35"}'
+        values: "0+0x90"
+      - series: 'routeros_audit_up{job="node",device="r1.sco"}'
+        values: "1+0x90"
+      - series: 'probe_success{job="blackbox-icmp",device="r1.sco",site="sco",instance="44.34.128.33"}'
+        values: "1+0x90"
+    alert_rule_test:
+      - eval_time: 75m
+        alertname: RouterOSAuditUnreadable
+        exp_alerts:
+          - exp_labels:
+              device: hil.sco
+              severity: page
+            exp_annotations:
+              summary: "hil.sco answers ICMP but the audit cannot read it for 1h"
+              description: "Credentials changed or access blocked. Treat as a possible takeover until shown otherwise."
+
+  # ── pipeline health ──
+  - interval: 1m
+    name: a stalled audit timer pages
+    input_series:
+      # last run at t=0, never again
+      - series: 'routeros_audit_last_run_timestamp_seconds{job="node"}'
+        values: "0+0x200"
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: RouterOSAuditStale
+        exp_alerts: []
+      - eval_time: 3h
+        alertname: RouterOSAuditStale
+        exp_alerts:
+          - exp_labels:
+              job: node
+              severity: page
+            exp_annotations:
+              summary: "RouterOS audit has not completed a run in >2h"
+
+  - interval: 10m
+    name: a never-written audit metric pages after the grace period
+    input_series:
+      - series: 'up{job="node"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: RouterOSAuditMetricMissing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "RouterOS audit metric absent for >2h — timer or metrics broken"

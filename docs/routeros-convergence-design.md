@@ -1,8 +1,9 @@
 # RouterOS convergence — declared state, stacked roles (design & plan)
 
-**Status: design only, nothing implemented.** Written 2026-10-13 at the end of
-the hand cleanup after the September 2026 compromise, to be built by another
-team. Every router-touching step stays behind the
+**Status: being implemented as the rollout PRs below** (see
+[Implementation notes](#implementation-notes) for where the build departed
+from this design and why). Written 2026-10-13 at the end of
+the hand cleanup after the September 2026 compromise. Every router-touching step stays behind the
 [execution gate](../ansible/roles/routeros_baseline/README.md) and Ryan's PR
 review. Incident specifics (timeline, per-device evidence, which devices are
 still hostile) are in the private incident record, not in this public repo —
@@ -124,7 +125,7 @@ In `group_vars` for `routeros` unless noted:
 
 | # | Role | Purpose | Transport |
 |---|---|---|---|
-| 1 | `routeros_facts` (new) | Read-only snapshot, normalized, saved per host | API; SSH for keys, history, file download |
+| 1 | `routeros_facts` (new) | Read-only snapshot, normalized, saved per host | API (keys and history included) |
 | 2 | `routeros_access` (merges bootstrap + onboard) | Service and operator accounts, keys, API cert, passwords; rotation switches | SSH |
 | 3 | `routeros_remediate` (new) | Remove everything not declared; restore logging | API; SSH for keys and files |
 | 4 | `routeros_baseline` (extended) | Hardening as policy | API |
@@ -132,8 +133,9 @@ In `group_vars` for `routeros` unless noted:
 | 6 | `routeros_audit` (new play) | Drift report, metrics, alerts | API (read-only) |
 
 Transport decision: API first (structured data, check mode); SSH only where the
-API cannot do the job — `/user ssh-keys`, reading `/system history`, and copying
-files off the device.
+API cannot do the job — importing `/user ssh-keys` from a file and copying
+files off the device. (Reading keys and `/system history` works over the API;
+see Implementation notes.)
 
 #### `routeros_facts`
 
@@ -284,11 +286,12 @@ Learned during the cleanup; the roles must handle each.
 | SSH/API allow-list property on `/ip service` | `address` | `address` | `available-from` |
 | Per-session dynamic entries in `/ip service` | no (`dynamic` not filterable) | no | yes — always filter `dynamic=no` |
 | SSH password-login setting | `always-allow-password-login` | `always-allow-password-login` | `password-authentication` (`yes` / `no` / `yes-if-no-key`) |
-| `/ip cloud set ddns-enabled=no` | untested | **syntax error** | works (`yes` / `no` / `auto`) |
+| `/ip cloud set ddns-enabled=no` | untested (boolean before 7.17) | **invalid** | **invalid** — only `yes` / `auto`; `auto` is off (lab, 7.24.5) |
 | `reverse-proxy` service | absent | absent | present, enabled by default |
 | Remote syslog format | `bsd-syslog` | `bsd-syslog` | `remote-log-format` (7.18+, already handled) |
 | Default `/export` | — | **prints secrets in clear** | hides them |
-| SSH key fingerprints in `print` | no | no | yes |
+| SSH key fingerprints in `print` | no | no | yes, base64 with `=` padding (ssh-keygen strips it) |
+| SSH key comment field | `key-owner` | `key-owner` | `info` |
 
 Also:
 
@@ -305,6 +308,41 @@ Also:
 - A 16 MB board keeps uploaded files in RAM (the top level) and flash in
   `flash/`; free flash is not the limit on uploading a package, but the
   installed size is.
+- Over the API (librouteros), `yes`/`no` values arrive as booleans, and a
+  Python `False` is written back as `no` — which `ddns-enabled` rejects.
+- `/tool romon discover` runs over the API too (`duration=15s`) and returns
+  structured rows, so no wide terminal is needed — but it needs the `romon`
+  policy.
+- The read-only `mktxp` account (`api,read`) can read `/system history`,
+  `/user`, `/user ssh-keys`, `/file` and `/user active`.
+
+## Implementation notes
+
+Where the build departed from the design above, found while building it
+against the RouterOS lab (`tests/lab`: two CHR 7.24.5 VMs under QEMU).
+
+- **Quarantine membership is private.** Listing hostile devices in this public
+  inventory (open question 6) is avoided: the `quarantined` group exists in
+  the inventory but is empty, and the `routeros_lifecycle` role merges the
+  list from sops (`quarantined_hosts`) into every run. Every device playbook
+  imports `playbooks/lifecycle.yml` first; a run that cannot read the list
+  stops. Hosts can still be listed in the group directly if that is decided.
+- **The API reads everything**, SSH keys and `/system history` included (both
+  readable over the API on 7.17 and 7.24). SSH stays for importing keys and
+  copying files.
+- **One library** (`ansible/lib/routeros_convergence`) holds the reading, the
+  drift policy, the remediation planner and the metrics. The audit and the
+  planner share one policy (`policy.py`), so the audit reports exactly what
+  remediation would change. The netops host runs the same code on its timer.
+- **Audit metrics are counts only.** The anonymous Grafana can query
+  Prometheus, so per-device metrics never carry account, file or address
+  names; the named report stays private (laptop `ansible/build/audit/`, host
+  `/var/lib/netops/audit/report.json`).
+- **The scheduled audit uses the `mktxp` account** (open question 5): it can
+  read everything the audit needs. RoMON discovery runs only in the laptop
+  audit, as `ansible` with the `romon` policy added to `netops-ansible`.
+- **SSH forwarding defaults to off** (open question 3), per device
+  `routeros_ssh_forwarding: true` to keep it.
 
 ## Testing
 

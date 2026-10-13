@@ -208,18 +208,40 @@ To add a device: add it to the inventory, run the bootstrap/onboarding plays —
 by `-e confirm_execution=true`; see ansible/roles/routeros_baseline/README.md),
 then deploy the backup host to pick up the new fleet list.
 
+### RouterOS convergence
+
+Every router's expected state is declared in
+`ansible/inventory/group_vars/routeros.yml` (accounts, services, management
+sources, logging, versions) plus per-device `routeros_allow` in `host_vars/`,
+and a stack of roles converges a device to it — design and rollout in
+[docs/routeros-convergence-design.md](docs/routeros-convergence-design.md).
+The comparison logic is one Python library, `ansible/lib/routeros_convergence`,
+used by the roles, the netops host's scheduled audit and the tests.
+
+- `playbooks/routeros_audit.yml` — read-only drift report, safe any time
+  (`ansible/build/audit/fleet.txt`). The netops host runs the same audit
+  every 30 minutes and alerts on drift (`rules/routeros-audit.yml`).
+- `tests/lab/` — two RouterOS CHR VMs under QEMU on your machine, for running
+  the roles end to end before they touch a device.
+
 ## Layout
 
 ```
 ansible/             inventory (source of truth), playbooks, roles
   inventory/group_vars/    declared state shared by the fleet (routeros.yml)
+  lib/routeros_convergence/ read, compare, plan: the convergence library
+  plugins/filter/          Ansible filters over that library
   roles/netops_host/       deploys the whole rpi.sco stack (configs live here)
   roles/routeros_lifecycle/ merges the private quarantine list into each run
+  roles/routeros_facts/    read-only device snapshot over the API
+  roles/routeros_audit/    drift report against the declared state
   roles/routeros_baseline/ device baseline (ran 2026-08-29/30), see its README
   roles/site_services/     DRAFT DNS/NTP + anycast — never executed, see its README
 docs/                design docs (site services / anycast, RouterOS convergence)
 secrets/             sops/age-encrypted runtime secrets
 tests/prometheus/    promtool unit tests for the alert rules
+tests/routeros/      unit tests of the convergence library (lab snapshots)
+tests/lab/           RouterOS CHR lab under QEMU
 ```
 
 ## Backup host bootstrap (one-time)

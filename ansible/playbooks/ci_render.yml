@@ -17,6 +17,15 @@
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../roles/netops_host/defaults/main.yml"
 
+    # the deploy merges the private lifecycle data before rendering; CI has no
+    # sops access, so it merges empty/dummy lists the same way
+    - name: Merge lifecycle data (dummy private lists)
+      ansible.builtin.include_role:
+        name: routeros_lifecycle
+      vars:
+        quarantined_hosts: []
+        management_sources_private: [192.0.2.0/24]
+
     - name: Render directory
       ansible.builtin.file:
         path: "{{ render_dir }}"
@@ -37,6 +46,24 @@
         - caddy-auth.snippet
         - config.alloy
         - netops-firewall.sh
+        - routeros-audit-targets.json
+
+    # every active device's declared state builds (key files, fingerprints,
+    # management sources) and passes the library's own validation
+    - name: The audit targets carry a usable declared state for every active device
+      ansible.builtin.assert:
+        that:
+          - targets | length == expected | length
+          - targets | map(attribute='name') | sort == expected | sort
+          - targets | map(attribute='declared') | map('routeros_declared_problems') | flatten | length == 0
+          - "'192.0.2.0/24' in targets[0].declared.management_sources"
+          - "(targets[0].declared.accounts | map(attribute='name') | list) == ['ansible', 'oxidized', 'oxidized-full', 'mktxp', 'turnrye', 'seichold', 'ae5au']"
+          - targets[0].declared.accounts | selectattr('name', 'eq', 'turnrye') | map(attribute='keys') | first | length == 2
+        quiet: true
+      vars:
+        targets: "{{ lookup('file', render_dir ~ '/routeros-audit-targets.json') | from_json }}"
+        expected: >-
+          {{ groups['routeros'] | difference(groups['excluded'] + groups['expected_down'] + groups['quarantined']) }}
 
     - name: Rendered target files parse as YAML lists
       ansible.builtin.assert:

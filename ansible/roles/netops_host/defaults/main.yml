@@ -17,6 +17,10 @@ data_dirs:
 # oxidized container uid
 oxidized_uid: "30000"
 
+# librouteros for the scheduled RouterOS audit's venv; same series as the
+# controller (ansible/requirements.txt)
+netops_audit_librouteros_version: "~=4.2"
+
 # api-ssl migration complete 2026-08-30: every reachable device is baselined
 # (8728 disabled, api-ssl on 8729), so mktxp collects over TLS. Dark devices
 # inherit this and join over 8729 when they recover — no plaintext fallback.

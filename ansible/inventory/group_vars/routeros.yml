@@ -1,8 +1,9 @@
 ---
 # Declared state shared by every RouterOS device. Design:
 # docs/routeros-convergence-design.md. Per-device exceptions belong in
-# host_vars/<host>.yml.
+# host_vars/<host>.yml (`routeros_allow`, see the end of this file).
 
+# ── Management access ────────────────────────────────────────────────────
 # Sources allowed to reach the management services (SSH, API-SSL). Only the
 # netops host is listed here; operators' addresses are personal, so they live
 # in sops as `management_sources_private` and are merged at run time by the
@@ -14,3 +15,117 @@ management_sources:
 # Undefined until routeros_lifecycle has run, on purpose: nothing may write an
 # allow list that lacks the operators' addresses.
 management_sources_effective: "{{ (management_sources + management_sources_private) | unique }}"
+
+# The only services left enabled; every other /ip service entry (telnet, ftp,
+# www, www-ssl, winbox, plaintext api, reverse-proxy) is disabled. Both are
+# restricted to management_sources_effective.
+routeros_services:
+  ssh: {port: 222}
+  api-ssl: {port: 8729, certificate: api-ssl}
+
+# SSH password login off (only possible from 7.21; routeros_baseline first
+# checks that every remaining SSH account holds a key). Port forwarding off:
+# nothing in the fleet is known to rely on it (design open question 3).
+routeros_ssh_password_login: false
+routeros_ssh_forwarding: false
+
+# ── Accounts ─────────────────────────────────────────────────────────────
+# Every account a device may have; anything else is removed by
+# routeros_remediate and flagged by the audit. Retired 2026-10-13: the shared
+# `hamwan` and `packetbard` accounts and the factory `admin`.
+routeros_keys_dir: "{{ playbook_dir }}/../roles/routeros_baseline/files"
+routeros_service_accounts:
+  - {name: ansible, group: netops-ansible, keys: [ansible.pub]}  # automation; API password in sops
+  - {name: oxidized, group: netops-backup-ro, keys: [oxidized.pub]}
+  - {name: oxidized-full, group: netops-backup-full, keys: [oxidized-full.pub]}
+  - {name: mktxp, group: mktxp_group, keys: []}  # metrics + scheduled audit; API password in sops
+# netops humans: group full, keys from files/operators/<name>_*.pub
+# (seichold's from their GitHub profile; ae5au's provided directly by them)
+operators:
+  - turnrye
+  - seichold
+  - ae5au
+
+# `romon` lets the automation account run RoMON discovery from the core, the
+# only view the audit has of devices it must not log in to.
+service_groups:
+  - {name: netops-backup-ro, policy: "ssh,read"}
+  - {name: netops-backup-full, policy: "ssh,read,sensitive"}
+  - {name: mktxp_group, policy: "api,read"}
+  - {name: netops-ansible, policy: "api,ssh,ftp,read,write,policy,test,romon"}
+
+# ── Time, resolvers, logging ─────────────────────────────────────────────
+collector_ip: 44.34.128.45
+
+ntp_servers:
+  - 44.34.128.181        # ntp.leb
+  - 44.34.133.3
+  # off-network fallback (LEB outage lesson, sec1.sco drift) — numeric
+  # anycast addresses for time.cloudflare.com, because the same LEB outage
+  # takes internal DNS down and a hostname fallback would be unresolvable
+  # exactly when it's needed
+  - 162.159.200.1
+  - 162.159.200.123
+
+# Resolver the device points `/ip dns` at. The two internal anycast resolvers
+# first (same ones linux_baseline puts in resolv.conf), then Cloudflare as an
+# off-network fallback — same LEB-outage reasoning as the NTP list: if the
+# internal DNS is unreachable, on-box lookups (`/system package update`, NTP
+# hostname fallback) still resolve. RouterOS queries them in order.
+dns_servers:
+  - 44.34.132.1          # anycast resolver (site_services)
+  - 44.34.133.1          # anycast resolver (site_services)
+  - 1.1.1.1              # off-network fallback (Cloudflare)
+  - 1.0.0.1
+
+# Routers must not be open DNS resolvers on AMPRNet (amplification risk); client
+# DNS lives on the site_services resolvers. Override per-device (host_vars)
+# only for a box that genuinely serves DNS to local clients.
+dns_allow_remote_requests: false
+
+syslog_topics: [system, error, warning, critical, account]
+# RouterOS's default; attackers cut it to 1 line to hide their tracks
+routeros_logging_memory_lines: 1000
+
+# ── Versions ─────────────────────────────────────────────────────────────
+# Below this the SSH authentication bypass (CVE-2026-67279/67276) is open.
+routeros_security_floor: 7.24.2
+
+# ── Per-device exceptions ────────────────────────────────────────────────
+# routeros_allow, in host_vars/<host>.yml, lists what remediation must keep
+# beyond the above: per category, entries matched by name (else comment),
+# '~regex' (name or comment), '*' (everything) or a dict of field values:
+#   routeros_allow:
+#     fw_nat: [{chain: srcnat, action: masquerade, src-address: 10.0.0.0/24}]
+#     ppp_secrets: ['*']
+#     vpn_clients: [sstp-out1]
+#     socks: false
+# Categories: users schedulers scripts files services ppp_secrets
+# ppp_profiles ip_pools vpn_servers vpn_clients wireguard wireguard_peers
+# fw_filter fw_nat fw_mangle fw_raw logging_actions logging_rules
+# traffic_flow_targets, and the booleans socks proxy traffic_flow ddns.
+# Declare a device's allowances before remediation runs there in apply mode;
+# plan mode shows what would go, which is how gaps are found.
+
+# The above as one dict, for the audit and the remediation planner.
+routeros_declared:
+  host: "{{ inventory_hostname }}"
+  identity: "{{ inventory_hostname }}"
+  accounts: "{{ routeros_service_accounts | routeros_declare_accounts(operators, routeros_keys_dir) }}"
+  services: "{{ routeros_services }}"
+  management_sources: "{{ management_sources_effective }}"
+  ssh:
+    password_login: "{{ routeros_ssh_password_login }}"
+    forwarding: "{{ routeros_ssh_forwarding }}"
+    strong_crypto: true
+  dns:
+    servers: "{{ dns_servers }}"
+    allow_remote_requests: "{{ dns_allow_remote_requests }}"
+  syslog:
+    target: "{{ collector_ip }}"
+    port: 514
+    topics: "{{ syslog_topics }}"
+    memory_lines: "{{ routeros_logging_memory_lines }}"
+  target_version: "{{ routeros_target_version | default('') }}"
+  security_floor: "{{ routeros_security_floor }}"
+  allow: "{{ routeros_allow | default({}) }}"

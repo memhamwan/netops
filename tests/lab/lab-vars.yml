@@ -1,0 +1,11 @@
+---
+# Extra vars for lab runs (-e @../tests/lab/lab-vars.yml). They stand in for
+# the sops secrets, so a lab run needs no age key, and point the fleet-wide
+# settings at the lab. Lab-only throwaway values.
+quarantined_hosts: []
+# QEMU user networking: the controller reaches the VMs from 10.0.2.2
+management_sources_private: [10.0.2.0/24]
+collector_ip: 10.0.2.2
+routeros_svc_api_password: lab-ansible
+mktxp_password: lab-mktxp
+routeros_audit_romon_core: chr-a.lab.memhamwan.net

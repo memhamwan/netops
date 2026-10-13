@@ -1,60 +1,13 @@
 ---
-# Ran fleet-wide 2026-08-29/30; see role README.
-collector_ip: 44.34.128.45
+# Ran fleet-wide 2026-08-29/30; see role README. The state this role enforces
+# (accounts, services, NTP, DNS, logging) is declared in
+# inventory/group_vars/routeros.yml, where the audit reads it too.
+
 # sources allowed to reach the RouterOS API: the declared management sources
 # (inventory group_vars + operators' addresses from sops, merged by
 # routeros_lifecycle). api_extra_sources stays as a one-run escape hatch:
 #   -e '{"api_extra_sources": ["192.0.2.60/32"]}'
 api_allowed_sources: "{{ management_sources_effective + (api_extra_sources | default([])) }}"
-
-ntp_servers:
-  - 44.34.128.181        # ntp.leb
-  - 44.34.133.3
-  # off-network fallback (LEB outage lesson, sec1.sco drift) — numeric
-  # anycast addresses for time.cloudflare.com, because the same LEB outage
-  # takes internal DNS down and a hostname fallback would be unresolvable
-  # exactly when it's needed
-  - 162.159.200.1
-  - 162.159.200.123
-
-# Resolver the device points `/ip dns` at. The two internal anycast resolvers
-# first (same ones linux_baseline puts in resolv.conf), then Cloudflare as an
-# off-network fallback — same LEB-outage reasoning as the NTP list: if the
-# internal DNS is unreachable, on-box lookups (`/system package update`, NTP
-# hostname fallback) still resolve. RouterOS queries them in order.
-dns_servers:
-  - 44.34.132.1          # anycast resolver (site_services)
-  - 44.34.133.1          # anycast resolver (site_services)
-  - 1.1.1.1              # off-network fallback (Cloudflare)
-  - 1.0.0.1
-
-# Routers must not be open DNS resolvers on AMPRNet (amplification risk); client
-# DNS lives on the site_services resolvers. Override per-device (inventory /
-# group_vars) only for a box that genuinely serves DNS to local clients.
-dns_allow_remote_requests: false
-
-syslog_topics: [system, error, warning, critical, account]
-
-# users the fleet is EXPECTED to have; anything else is reported by audit.yml
-expected_users:
-  - admin
-  - ansible
-  - oxidized
-  - oxidized-full
-  - mktxp
-# current netops humans — accounts outside expected_users + this list are
-# flagged by the audit. Public keys live in files/operators/ (seichold's from
-# their GitHub profile; ae5au's provided directly by them).
-operators:
-  - turnrye
-  - seichold
-  - ae5au
-
-service_groups:
-  - {name: netops-backup-ro, policy: "ssh,read"}
-  - {name: netops-backup-full, policy: "ssh,read,sensitive"}
-  - {name: mktxp_group, policy: "api,read"}
-  - {name: netops-ansible, policy: "api,ssh,ftp,read,write,policy,test"}
 
 # RouterOS stores group policies in canonical form: granted policies in this
 # fixed order, then the rest negated (!) in the same order. api_modify

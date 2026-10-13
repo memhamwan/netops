@@ -1,0 +1,20 @@
+[Unit]
+Description=Audit the RouterOS fleet against its declared state (read-only, textfile metrics)
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Reads devices over API-SSL as the read-only mktxp account; the library is
+# ansible/lib/routeros_convergence, the same code the laptop audit runs.
+Environment=PYTHONPATH=/opt/netops/audit/lib
+ExecStart=/opt/netops/audit/venv/bin/python -m routeros_convergence audit-fleet \
+    --targets /var/lib/netops/audit/targets.json \
+    --credentials /var/lib/netops/secrets/routeros-audit.env \
+    --textfile /var/lib/netops/node-exporter/routeros-audit.prom \
+    --report /var/lib/netops/audit/report.json
+# root only to read the credentials file; otherwise boxed in
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netops/audit /var/lib/netops/node-exporter
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

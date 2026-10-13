@@ -1,0 +1,38 @@
+---
+# RoMON discovery over the core's API session account: the only view the
+# audit has of quarantined and locked-out devices (no login to them).
+- name: RoMON discovery from {{ inventory_hostname }}
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -m
+      - routeros_convergence
+      - romon
+      - --address
+      - "{{ routeros_api_address }}"
+      - --port
+      - "{{ routeros_api_port | string }}"
+      - --user
+      - "{{ routeros_api_user }}"
+      - --duration
+      - "{{ routeros_audit_romon_duration | string }}"
+  environment:
+    PYTHONPATH: "{{ playbook_dir }}/../lib"
+    ROUTEROS_API_PASSWORD: "{{ routeros_api_password }}"
+  delegate_to: localhost
+  register: routeros_audit_romon_run
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Keep the RoMON rows
+  ansible.builtin.set_fact:
+    routeros_romon: "{{ routeros_audit_romon_run.stdout | from_json if routeros_audit_romon_run.rc == 0 else [] }}"
+
+- name: RoMON unavailable
+  ansible.builtin.debug:
+    msg: >-
+      RoMON discovery failed on {{ inventory_hostname }}: {{ routeros_audit_romon_run.stderr_lines | last | default('') }}
+      ("not enough permissions" = the API account's group lacks the romon
+      policy; routeros_baseline adds it from service_groups)
+  when: routeros_audit_romon_run.rc != 0

@@ -18,6 +18,8 @@
   gather_facts: false
   vars:
     ansible_user: "{{ lookup('env', 'USER') }}"
+    # declared once, in inventory/group_vars/routeros.yml
+    ansible_group_policy: "{{ (service_groups | selectattr('name', 'eq', 'netops-ansible') | first).policy }}"
   pre_tasks:
     - name: Execution gate — router changes need an explicit, reviewed run
       ansible.builtin.assert:
@@ -53,7 +55,7 @@
     - name: Ensure netops-ansible group
       community.routeros.command:
         commands:
-          - ':if ([:len [/user group find name=netops-ansible]] = 0) do={/user group add name=netops-ansible policy=api,ssh,ftp,read,write,policy,test}'
+          - ':if ([:len [/user group find name=netops-ansible]] = 0) do={/user group add name=netops-ansible policy={{ ansible_group_policy }}}'
       changed_when: true
 
     # no_log: the command (password included) would otherwise land in ansible
@@ -71,7 +73,7 @@
     - name: Converge group policy and user membership
       community.routeros.command:
         commands:
-          - '/user group set [find name=netops-ansible] policy=api,ssh,ftp,read,write,policy,test'
+          - '/user group set [find name=netops-ansible] policy={{ ansible_group_policy }}'
           - '/user set [find name=ansible] group=netops-ansible'
       changed_when: true
 

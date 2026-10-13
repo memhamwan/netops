@@ -1,0 +1,11 @@
+{#- RENDERED from inventory: the devices the scheduled audit reads, each with
+    its declared state (inventory/group_vars/routeros.yml + host_vars).
+    Never the quarantined ones: the audit account's password must not reach
+    a hostile device. Holds the operators' addresses: root-only on the host. -#}
+{%- set out = [] -%}
+{%- for h in groups['routeros']
+      | difference((groups['excluded'] | default([])) + (groups['expected_down'] | default([])) + (groups['quarantined'] | default([])))
+      | sort -%}
+{%- set _ = out.append({'name': h, 'address': hostvars[h].ip | default(h), 'declared': hostvars[h].routeros_declared}) -%}
+{%- endfor -%}
+{{ out | to_nice_json }}

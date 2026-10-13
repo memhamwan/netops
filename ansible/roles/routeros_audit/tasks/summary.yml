@@ -1,0 +1,90 @@
+---
+# Fleet view, on the controller after the per-device audit: every inventory
+# device (excluded ones aside) with what is known about it — the audit when
+# it could be read, RoMON and port probes when it must not or cannot be.
+- name: Collect what is known about each device
+  ansible.builtin.set_fact:
+    routeros_fleet_entries: >-
+      {%- set out = [] -%}
+      {%- for h in fleet_hosts -%}
+      {%- set hv = hostvars[h] -%}
+      {%- set _ = out.append({
+            'host': h,
+            'lifecycle': ('quarantined' if h in groups['quarantined'] | default([])
+                          else 'expected_down' if h in groups['expected_down'] | default([])
+                          else 'active'),
+            'report': hv.routeros_audit | default(none),
+            'error': hv.routeros_facts_error | default('') | trim,
+          }) -%}
+      {%- endfor -%}
+      {{ out }}
+    routeros_probe_targets: >-
+      {%- set out = [] -%}
+      {%- for h in fleet_hosts -%}
+      {%- set _ = out.append({'name': h, 'address': hostvars[h].ip | default(h)}) -%}
+      {%- endfor -%}
+      {{ out }}
+  vars:
+    # the run's scope (routeros_lifecycle records it), so `-l` keeps the
+    # probes and the view to the devices asked for
+    fleet_hosts: >-
+      {{ (routeros_run_scope | default(groups['routeros']))
+         | difference(groups['excluded'] | default([])) | sort }}
+
+- name: Write the probe targets
+  ansible.builtin.copy:
+    content: "{{ routeros_probe_targets | to_json }}"
+    dest: "{{ routeros_audit_dir }}/probe-targets.json"
+    mode: "0600"
+  check_mode: false
+  changed_when: false
+  when: routeros_audit_probe | bool
+
+- name: Management ports on every device (connect only, no login)
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -m
+      - routeros_convergence
+      - probe
+      - --targets
+      - "{{ routeros_audit_dir }}/probe-targets.json"
+      - --ports
+      - "{{ routeros_audit_probe_ports | join(',') }}"
+  environment:
+    PYTHONPATH: "{{ playbook_dir }}/../lib"
+  register: routeros_audit_probe_run
+  changed_when: false
+  check_mode: false
+  when: routeros_audit_probe | bool
+
+- name: Assemble the fleet view
+  ansible.builtin.set_fact:
+    routeros_fleet: >-
+      {{ routeros_fleet_entries | routeros_fleet(
+           hostvars[routeros_audit_romon_core].routeros_romon | default([]),
+           (routeros_audit_probe_run.stdout | from_json) if routeros_audit_probe | bool else []) }}
+
+- name: Save the fleet view and the metrics
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ routeros_audit_dir }}/{{ item.name }}"
+    mode: "0600"
+  loop:
+    - {name: fleet.json, content: "{{ routeros_fleet | to_nice_json }}"}
+    - {name: fleet.txt, content: "{{ routeros_fleet.text }}\n"}
+    - name: routeros-audit.prom
+      content: >-
+        {{ routeros_fleet_entries | selectattr('report') | map(attribute='report') | list
+           | routeros_audit_metrics(
+               routeros_fleet_entries | selectattr('lifecycle', 'eq', 'active')
+               | rejectattr('report') | map(attribute='host') | list,
+               now(utc=true).timestamp()) }}
+  loop_control:
+    label: "{{ item.name }}"
+  check_mode: false
+  changed_when: false
+
+- name: Fleet view (details in {{ routeros_audit_dir }})
+  ansible.builtin.debug:
+    msg: "{{ routeros_fleet.text.splitlines() }}"

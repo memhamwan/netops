@@ -61,6 +61,7 @@ jobs:
           --entrypoint promtool prom/prometheus:v3.14.0
           check rules /etc/prometheus/rules/alerts.yml
           /etc/prometheus/rules/site-services.yml
+          /etc/prometheus/rules/routeros-audit.yml
       # Unit-test the alert rules against synthetic series. Catches the
       # label-matching and empty-vector traps that make a rule silently
       # unable to fire — a check-rules pass proves only that it parses.
@@ -70,6 +71,7 @@ jobs:
           --entrypoint promtool prom/prometheus:v3.14.0
           test rules tests/prometheus/site-services_test.yml
           tests/prometheus/reachability_test.yml
+          tests/prometheus/routeros-audit_test.yml
 
       # A probed hostname with no DNS record can never succeed — permanent
       # false alarm (the ups.sco/ups.mno defect). Runs on the rendered
@@ -113,6 +115,22 @@ jobs:
           for f in ansible/roles/netops_host/files/monitoring/grafana/dashboards/*.json; do
             jq empty "$f"
           done
+
+  # The drift policy, remediation planner and audit behind the RouterOS
+  # convergence roles, tested on snapshots of the RouterOS lab
+  # (tests/lab): a clean device, the September 2026 artifacts, an
+  # edge-router-like device, and the 7.17 shapes.
+  routeros-library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test tooling
+        run: pip install pytest
+      - name: pytest
+        run: python -m pytest -q tests/routeros
 
   # No two fleet devices may share an OSPF router-id (the 2026-09 LSA-war
   # incident). Checks the latest Oxidized exports against the inventory.

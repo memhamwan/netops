@@ -1,0 +1,1305 @@
+{
+ "architecture": "arm64",
+ "board": "CHR QEMU QEMU Virtual Machine",
+ "channel": "stable",
+ "device_mode": {
+  "flagged": false,
+  "mode": "advanced"
+ },
+ "errors": {
+  "poe": "TrapError: no such command prefix"
+ },
+ "firmware_current": "",
+ "firmware_upgrade": "",
+ "free_hdd": 72101888,
+ "gathered_at": "2026-10-13T19:57:01Z",
+ "host": "chr-a.lab.memhamwan.net",
+ "identity": "chr-a.lab.memhamwan.net",
+ "menus": {
+  "active_users": [
+   {
+    ".id": "*3",
+    "address": "10.0.2.2",
+    "group": "netops-ansible",
+    "name": "ansible",
+    "radius": false,
+    "via": "api",
+    "when": "2026-10-13 19:57:01"
+   }
+  ],
+  "certificates": [
+   {
+    ".id": "*1",
+    "common-name": "chr-a.lab.memhamwan.net",
+    "invalid-after": "2036-10-10 19:55:25",
+    "key-usage": "digital-signature,key-encipherment,key-cert-sign,tls-server",
+    "name": "api-ssl",
+    "private-key": true,
+    "trusted": true
+   }
+  ],
+  "cloud": [
+   {
+    "back-to-home-vpn": "revoked-and-disabled",
+    "ddns-enabled": "auto",
+    "ddns-update-interval": "none",
+    "update-time": false
+   }
+  ],
+  "device_mode": [
+   {
+    "allowed-versions": "7.13+,6.49.8+",
+    "attempt-count": 0,
+    "bandwidth-test": true,
+    "container": false,
+    "email": true,
+    "fetch": true,
+    "flagged": false,
+    "flagging-enabled": true,
+    "hotspot": true,
+    "install-any-version": false,
+    "ipsec": true,
+    "l2tp": true,
+    "mode": "advanced",
+    "partitions": false,
+    "pptp": true,
+    "proxy": true,
+    "romon": true,
+    "routerboard": false,
+    "scheduler": true,
+    "smb": true,
+    "sniffer": true,
+    "socks": true,
+    "traffic-gen": false,
+    "zerotier": true
+   }
+  ],
+  "dhcp_servers": [],
+  "dns": [
+   {
+    "address-list-extra-time": "0s",
+    "allow-remote-requests": false,
+    "cache-max-ttl": "1w",
+    "cache-size": 2048,
+    "cache-used": 45,
+    "doh-max-concurrent-queries": 50,
+    "doh-max-server-connections": 5,
+    "doh-timeout": "5s",
+    "dynamic-servers": "10.0.2.3",
+    "max-concurrent-queries": 100,
+    "max-concurrent-tcp-sessions": 20,
+    "max-udp-packet-size": 4096,
+    "mdns-repeat-ifaces": "",
+    "query-server-timeout": "2s",
+    "query-total-timeout": "10s",
+    "servers": "44.34.132.1,44.34.133.1,1.1.1.1,1.0.0.1",
+    "use-doh-server": "",
+    "verify-doh-cert": false,
+    "vrf": "main"
+   }
+  ],
+  "files": [],
+  "fw_filter": [
+   {
+    ".id": "*1",
+    "action": "accept",
+    "bytes": 9755,
+    "chain": "input",
+    "comment": "edge-0",
+    "connection-state": "established,related",
+    "dynamic": false,
+    "invalid": false,
+    "packets": 105
+   },
+   {
+    ".id": "*2",
+    "action": "accept",
+    "bytes": 0,
+    "chain": "input",
+    "comment": "edge-1",
+    "dst-port": 222,
+    "dynamic": false,
+    "invalid": true,
+    "packets": 0,
+    "protocol": "tcp",
+    "src-address-list": "mhw-admin"
+   },
+   {
+    ".id": "*3",
+    "action": "drop",
+    "bytes": 0,
+    "chain": "input",
+    "comment": "edge-2",
+    "dynamic": false,
+    "invalid": true,
+    "packets": 0
+   },
+   {
+    ".id": "*4",
+    "action": "drop",
+    "bytes": 0,
+    "chain": "forward",
+    "comment": "edge-3",
+    "dynamic": false,
+    "invalid": true,
+    "out-interface": "ether1",
+    "packets": 0,
+    "src-address-list": "mhw-routers"
+   },
+   {
+    ".id": "*5",
+    "action": "drop",
+    "bytes": 0,
+    "chain": "forward",
+    "comment": "edge-4",
+    "dst-address-list": "mhw-routers",
+    "dynamic": false,
+    "in-interface": "ether1",
+    "invalid": true,
+    "packets": 0
+   },
+   {
+    ".id": "*6",
+    "action": "accept",
+    "bytes": 0,
+    "chain": "forward",
+    "dynamic": false,
+    "invalid": true,
+    "packets": 0,
+    "protocol": "gre"
+   }
+  ],
+  "fw_mangle": [],
+  "fw_nat": [
+   {
+    ".id": "*1",
+    "action": "masquerade",
+    "bytes": 0,
+    "chain": "srcnat",
+    "comment": "wg-mgmt clients",
+    "dynamic": false,
+    "invalid": false,
+    "packets": 0,
+    "src-address": "10.66.0.0/24"
+   }
+  ],
+  "fw_raw": [],
+  "history": [
+   {
+    ".id": "*13",
+    "action": "nat rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall nat add action=masquerade chain=srcnat comment=\\\r\n    \"wg-mgmt clients\" src-address=10.66.0.0/24\r\n",
+    "time": "2026-10-13 19:57:01",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall nat remove *1\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*12",
+    "action": "address added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip address add address=10.66.0.1/24 interface=*4\r\n",
+    "time": "2026-10-13 19:57:01",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip address remove *2\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*11",
+    "action": "wireguard peer entry added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/interface wireguard peers add allowed-address=10.66.0.12/32 \\\r\n    comment=operator-2 interface=*4 public-key=\\\r\n    \"Q0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0M=\"\r\n",
+    "time": "2026-10-13 19:57:01",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/interface wireguard peers remove *3\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*10",
+    "action": "wireguard peer entry added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/interface wireguard peers add allowed-address=10.66.0.11/32 \\\r\n    comment=operator-1 interface=*4 public-key=\\\r\n    \"QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=\"\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/interface wireguard peers remove *2\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*F",
+    "action": "wireguard peer entry added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/interface wireguard peers add allowed-address=10.66.0.10/32 \\\r\n    comment=operator-0 interface=*4 public-key=\\\r\n    \"QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=\"\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/interface wireguard peers remove *1\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*E",
+    "action": "device added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/interface wireguard add listen-port=51820 name=wg-mgmt\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/interface wireguard remove *4\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*D",
+    "action": "SSTP Server settings changed",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/interface sstp-server server set default-profile=*1 enabled=true\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/interface sstp-server server set authentication=\\\r\n    pap,chap,mschap1,mschap2 certificate=none ciphers=\\\r\n    aes256-sha,aes256-gcm-sha384 default-profile=default enabled=\\\r\n    false keepalive-timeout=60 max-mru=1500 max-mtu=1500 mrru=\\\r\n    disabled pfs=no port=443 tls-version=any \\\r\n    verify-client-certificate=false\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*C",
+    "action": "ppp secret <operator-1> added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ppp secret add name=operator-1 profile=*1 service=sstp\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ppp secret remove *3\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*B",
+    "action": "ppp secret <ftn-sstp> added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ppp secret add name=ftn-sstp profile=*1 service=sstp\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ppp secret remove *2\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*A",
+    "action": "ppp secret <sco-sstp> added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ppp secret add name=sco-sstp profile=*1 service=sstp\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ppp secret remove *1\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*9",
+    "action": "ppp profile <mhw-sstp> added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ppp profile add local-address=44.34.131.1 name=mhw-sstp\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ppp profile remove *1\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*8",
+    "action": "filter rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall filter add action=accept chain=forward protocol=gre\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall filter remove *6\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*7",
+    "action": "filter rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall filter add action=drop chain=forward comment=edge-4 \\\r\n    dst-address-list=mhw-routers in-interface=ether1\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall filter remove *5\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*6",
+    "action": "filter rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall filter add action=drop chain=forward comment=edge-3 \\\r\n    out-interface=ether1 src-address-list=mhw-routers\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall filter remove *4\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*5",
+    "action": "filter rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall filter add action=drop chain=input comment=edge-2\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall filter remove *3\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*4",
+    "action": "filter rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall filter add action=accept chain=input comment=edge-1 \\\r\n    dst-port=222 protocol=tcp src-address-list=mhw-admin\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall filter remove *2\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*3",
+    "action": "filter rule added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall filter add action=accept chain=input comment=edge-0 \\\r\n    connection-state=established,related\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall filter remove *1\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*2",
+    "action": "address list entry added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall address-list add address=198.51.100.7 list=mhw-admin\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall address-list remove *2\r\n",
+    "undoable": true
+   },
+   {
+    ".id": "*1",
+    "action": "address list entry added",
+    "by": "admin",
+    "policy": "write",
+    "redo": "/ip firewall address-list add address=44.34.128.0/21 list=\\\r\n    mhw-routers\r\n",
+    "time": "2026-10-13 19:57:00",
+    "trace": "api:admin@10.0.2.2",
+    "undo": "/ip firewall address-list remove *1\r\n",
+    "undoable": true
+   }
+  ],
+  "identity": [
+   {
+    "name": "chr-a.lab.memhamwan.net"
+   }
+  ],
+  "ip_addresses": [
+   {
+    ".id": "*1",
+    "actual-interface": "ether1",
+    "address": "10.0.2.15/24",
+    "disabled": false,
+    "dynamic": true,
+    "interface": "ether1",
+    "invalid": false,
+    "network": "10.0.2.0",
+    "slave": false,
+    "vrf": "main"
+   },
+   {
+    ".id": "*2",
+    "actual-interface": "wg-mgmt",
+    "address": "10.66.0.1/24",
+    "disabled": false,
+    "dynamic": false,
+    "interface": "wg-mgmt",
+    "invalid": false,
+    "network": "10.66.0.0",
+    "slave": false,
+    "vrf": "main"
+   }
+  ],
+  "ip_pools": [],
+  "l2tp_clients": [],
+  "l2tp_server": [
+   {
+    "accept-proto-version": "all",
+    "accept-pseudowire-type": "all",
+    "allow-fast-path": false,
+    "authentication": "pap,chap,mschap1,mschap2",
+    "caller-id-type": "ip-address",
+    "default-profile": "default-encryption",
+    "enabled": false,
+    "ipsec-secret": "<redacted>",
+    "keepalive-timeout": 30,
+    "l2tpv3-circuit-id": "",
+    "l2tpv3-cookie-length": 0,
+    "l2tpv3-digest-hash": "md5",
+    "max-mru": 1450,
+    "max-mtu": 1450,
+    "max-sessions": "unlimited",
+    "mrru": "disabled",
+    "one-session-per-host": false,
+    "use-ipsec": false
+   }
+  ],
+  "logging": [
+   {
+    ".id": "*1",
+    "action": "memory",
+    "default": true,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "info"
+   },
+   {
+    ".id": "*2",
+    "action": "memory",
+    "default": true,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "error"
+   },
+   {
+    ".id": "*3",
+    "action": "memory",
+    "default": true,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "warning"
+   },
+   {
+    ".id": "*4",
+    "action": "echo",
+    "default": true,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "critical"
+   },
+   {
+    ".id": "*5",
+    "action": "remote",
+    "default": false,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "system"
+   },
+   {
+    ".id": "*6",
+    "action": "remote",
+    "default": false,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "error"
+   },
+   {
+    ".id": "*7",
+    "action": "remote",
+    "default": false,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "warning"
+   },
+   {
+    ".id": "*8",
+    "action": "remote",
+    "default": false,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "critical"
+   },
+   {
+    ".id": "*9",
+    "action": "remote",
+    "default": false,
+    "disabled": false,
+    "invalid": false,
+    "managed": false,
+    "prefix": "",
+    "regex": "",
+    "topics": "account"
+   }
+  ],
+  "logging_actions": [
+   {
+    ".id": "*0",
+    "default": true,
+    "managed": false,
+    "memory-lines": 1000,
+    "memory-stop-on-full": false,
+    "name": "memory",
+    "target": "memory"
+   },
+   {
+    ".id": "*1",
+    "default": true,
+    "disk-file-count": 2,
+    "disk-file-name": "log",
+    "disk-lines-per-file": 1000,
+    "disk-stop-on-full": false,
+    "managed": false,
+    "name": "disk",
+    "target": "disk"
+   },
+   {
+    ".id": "*2",
+    "default": true,
+    "managed": false,
+    "name": "echo",
+    "remember": true,
+    "target": "echo"
+   },
+   {
+    ".id": "*3",
+    "add-topics-string": false,
+    "default": true,
+    "managed": false,
+    "name": "remote",
+    "remote": "10.0.2.2",
+    "remote-log-format": "syslog",
+    "remote-port": 514,
+    "remote-protocol": "udp",
+    "src-address": "0.0.0.0",
+    "syslog-facility": "daemon",
+    "syslog-severity": "auto",
+    "syslog-time-format": "bsd-syslog",
+    "target": "remote",
+    "vrf": "main"
+   }
+  ],
+  "ntp_client": [
+   {
+    "enabled": false,
+    "freq-drift": 0,
+    "mode": "unicast",
+    "servers": "",
+    "status": "stopped",
+    "vrf": "main"
+   }
+  ],
+  "ovpn_clients": [],
+  "ovpn_server": [],
+  "packages": [
+   {
+    ".id": "*1",
+    "available": false,
+    "build-time": "2026-09-29 14:21:27",
+    "disabled": false,
+    "name": "routeros",
+    "scheduled": "",
+    "size": 13922637,
+    "version": "7.24.5"
+   }
+  ],
+  "ppp_profiles": [
+   {
+    ".id": "*0",
+    "address-list": "",
+    "bridge-learning": "default",
+    "change-tcp-mss": true,
+    "default": true,
+    "name": "default",
+    "on-down": "",
+    "on-up": "",
+    "only-one": "default",
+    "use-compression": "default",
+    "use-encryption": "default",
+    "use-ipv6": true,
+    "use-mpls": "default",
+    "use-upnp": "default"
+   },
+   {
+    ".id": "*1",
+    "address-list": "",
+    "bridge-learning": "default",
+    "change-tcp-mss": "default",
+    "default": false,
+    "local-address": "44.34.131.1",
+    "name": "mhw-sstp",
+    "on-down": "",
+    "on-up": "",
+    "only-one": "default",
+    "use-compression": "default",
+    "use-encryption": "default",
+    "use-ipv6": true,
+    "use-mpls": "default",
+    "use-upnp": "default"
+   },
+   {
+    ".id": "*FFFFFFFE",
+    "address-list": "",
+    "bridge-learning": "default",
+    "change-tcp-mss": true,
+    "default": true,
+    "name": "default-encryption",
+    "on-down": "",
+    "on-up": "",
+    "only-one": "default",
+    "use-compression": "default",
+    "use-encryption": true,
+    "use-ipv6": true,
+    "use-mpls": "default",
+    "use-upnp": "default"
+   }
+  ],
+  "ppp_secrets": [
+   {
+    ".id": "*1",
+    "caller-id": "",
+    "disabled": false,
+    "ipv6-routes": "",
+    "last-logged-out": "1970-01-01 00:00:00",
+    "limit-bytes-in": 0,
+    "limit-bytes-out": 0,
+    "name": "sco-sstp",
+    "password": "<redacted>",
+    "profile": "mhw-sstp",
+    "routes": "",
+    "service": "sstp"
+   },
+   {
+    ".id": "*2",
+    "caller-id": "",
+    "disabled": false,
+    "ipv6-routes": "",
+    "last-logged-out": "1970-01-01 00:00:00",
+    "limit-bytes-in": 0,
+    "limit-bytes-out": 0,
+    "name": "ftn-sstp",
+    "password": "<redacted>",
+    "profile": "mhw-sstp",
+    "routes": "",
+    "service": "sstp"
+   },
+   {
+    ".id": "*3",
+    "caller-id": "",
+    "disabled": false,
+    "ipv6-routes": "",
+    "last-logged-out": "1970-01-01 00:00:00",
+    "limit-bytes-in": 0,
+    "limit-bytes-out": 0,
+    "name": "operator-1",
+    "password": "<redacted>",
+    "profile": "mhw-sstp",
+    "routes": "",
+    "service": "sstp"
+   }
+  ],
+  "pptp_clients": [],
+  "pptp_server": [
+   {
+    "authentication": "mschap1,mschap2",
+    "default-profile": "default-encryption",
+    "enabled": false,
+    "keepalive-timeout": 30,
+    "max-mru": 1450,
+    "max-mtu": 1450,
+    "mrru": "disabled"
+   }
+  ],
+  "proxy": [
+   {
+    "always-from-cache": false,
+    "anonymous": false,
+    "cache-administrator": "webmaster",
+    "cache-hit-dscp": 4,
+    "cache-on-disk": false,
+    "cache-path": "web-proxy",
+    "enabled": false,
+    "max-cache-object-size": 2048,
+    "max-cache-size": "unlimited",
+    "max-client-connections": 600,
+    "max-fresh-time": "3d",
+    "max-server-connections": 600,
+    "parent-proxy": "::",
+    "parent-proxy-port": 0,
+    "port": 8080,
+    "serialize-connections": false,
+    "src-address": "::"
+   }
+  ],
+  "resource": [
+   {
+    "architecture-name": "arm64",
+    "board-name": "CHR QEMU QEMU Virtual Machine",
+    "build-time": "2026-09-29 14:21:27",
+    "cpu": "ARM64",
+    "cpu-count": 2,
+    "cpu-load": 43,
+    "free-hdd-space": 72101888,
+    "free-memory": 810348544,
+    "platform": "MikroTik",
+    "total-hdd-space": 86183936,
+    "total-memory": 1073741824,
+    "uptime": "1m5s",
+    "version": "7.24.5 (stable)",
+    "write-sect-since-reboot": 688,
+    "write-sect-total": 688
+   }
+  ],
+  "romon": [
+   {
+    "current-id": "52:54:00:02:00:02",
+    "enabled": true,
+    "id": "00:00:00:00:00:00",
+    "secrets": "<redacted>"
+   }
+  ],
+  "routerboard": [
+   {
+    "routerboard": false
+   }
+  ],
+  "schedulers": [],
+  "scripts": [],
+  "services": [
+   {
+    ".id": "*1",
+    "available-from": "",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": true,
+    "max-sessions": 20,
+    "name": "ftp",
+    "port": 21,
+    "proto": "tcp",
+    "vrf": "main"
+   },
+   {
+    ".id": "*0",
+    "available-from": "",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": true,
+    "max-sessions": 20,
+    "name": "telnet",
+    "port": 23,
+    "proto": "tcp",
+    "vrf": "main"
+   },
+   {
+    ".id": "*13",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "dhcp",
+    "port": 67,
+    "proto": "udp"
+   },
+   {
+    ".id": "*F",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "dhcpclient",
+    "port": 68,
+    "proto": "udp"
+   },
+   {
+    ".id": "*2",
+    "available-from": "",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": true,
+    "max-sessions": 20,
+    "name": "www",
+    "port": 80,
+    "proto": "tcp",
+    "vrf": "main"
+   },
+   {
+    ".id": "*4",
+    "available-from": "10.0.2.0/24,44.34.128.45/32",
+    "disabled": false,
+    "dynamic": false,
+    "invalid": false,
+    "max-sessions": 20,
+    "name": "ssh",
+    "port": 222,
+    "proto": "tcp",
+    "vrf": "main"
+   },
+   {
+    ".id": "*6",
+    "available-from": "",
+    "certificate": "none",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": true,
+    "max-sessions": 20,
+    "name": "www-ssl",
+    "port": 443,
+    "proto": "tcp",
+    "tls-version": "any",
+    "vrf": "main"
+   },
+   {
+    ".id": "*A",
+    "available-from": "",
+    "certificate": "none",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": true,
+    "max-sessions": 20,
+    "name": "reverse-proxy",
+    "port": 443,
+    "proto": "tcp",
+    "tls-version": "any",
+    "vrf": "main"
+   },
+   {
+    ".id": "*10",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "sstp-server",
+    "port": 443,
+    "proto": "tcp"
+   },
+   {
+    ".id": "*B",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "btest",
+    "port": 2000,
+    "proto": "tcp"
+   },
+   {
+    ".id": "*D",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "discover",
+    "port": 5678,
+    "proto": "udp"
+   },
+   {
+    ".id": "*8",
+    "available-from": "",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": false,
+    "max-sessions": 20,
+    "name": "winbox",
+    "port": 8291,
+    "proto": "tcp",
+    "vrf": "main"
+   },
+   {
+    ".id": "*7",
+    "available-from": "",
+    "disabled": true,
+    "dynamic": false,
+    "invalid": true,
+    "max-sessions": 20,
+    "name": "api",
+    "port": 8728,
+    "proto": "tcp",
+    "vrf": "main"
+   },
+   {
+    ".id": "*9",
+    "available-from": "10.0.2.0/24,44.34.128.45/32",
+    "certificate": "api-ssl",
+    "disabled": false,
+    "dynamic": false,
+    "invalid": false,
+    "max-sessions": 20,
+    "name": "api-ssl",
+    "port": 8729,
+    "proto": "tcp",
+    "tls-version": "any",
+    "vrf": "main"
+   },
+   {
+    ".id": "*12",
+    "connection": true,
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "local": "10.0.2.15",
+    "name": "api-ssl",
+    "port": 8729,
+    "proto": "tcp",
+    "remote": "10.0.2.2:53326"
+   },
+   {
+    ".id": "*E",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "log",
+    "port": 50037,
+    "proto": "udp"
+   },
+   {
+    ".id": "*11",
+    "disabled": false,
+    "dynamic": true,
+    "invalid": false,
+    "name": "wireguard-wg-mgmt",
+    "port": 51820,
+    "proto": "udp"
+   }
+  ],
+  "socks": [
+   {
+    "auth-method": "none",
+    "connection-idle-timeout": "2m",
+    "enabled": false,
+    "max-connections": 200,
+    "port": 1080,
+    "version": 4,
+    "vrf": "main"
+   }
+  ],
+  "ssh": [
+   {
+    "ciphers": "auto",
+    "forwarding-enabled": false,
+    "host-key-size": 2048,
+    "host-key-type": "rsa",
+    "password-authentication": false,
+    "publickey-authentication-options": "none",
+    "strong-crypto": true
+   }
+  ],
+  "ssh_keys": [
+   {
+    ".id": "*1",
+    "bits": 256,
+    "fingerprint": "SHA256:AotGiR+ih3l8oeIdbQZlB1AAgS01Ri2m5hv3z20I1qg=",
+    "info": "ansible@memhamwan-netops",
+    "key-type": "ed25519",
+    "user": "ansible"
+   },
+   {
+    ".id": "*2",
+    "bits": 256,
+    "fingerprint": "SHA256:9Bs2fe9QlPqL3nZxXCaaU8CoAN302jsUIqKC1cZtS/g=",
+    "info": "oxidized@rpi-sco",
+    "key-type": "ed25519",
+    "user": "oxidized"
+   },
+   {
+    ".id": "*3",
+    "bits": 256,
+    "fingerprint": "SHA256:mSTEj6SD8Lhmaz0nIeojMJ55mBQHBCqMQnfFAe32zPM=",
+    "info": "oxidized-full@rpi-sco",
+    "key-type": "ed25519",
+    "user": "oxidized-full"
+   },
+   {
+    ".id": "*4",
+    "bits": 256,
+    "fingerprint": "SHA256:b8777l9TwmLIsEbBNiRlaUhl8gWzIRF7vhouRYuIKCk=",
+    "info": "",
+    "key-type": "ed25519",
+    "user": "turnrye"
+   },
+   {
+    ".id": "*5",
+    "bits": 2048,
+    "fingerprint": "SHA256:rBtGdr6jk022eQ1svHHGR4QKkU5Mm2gHqFoE7G/Q6U4=",
+    "info": "",
+    "key-type": "rsa",
+    "user": "turnrye"
+   },
+   {
+    ".id": "*6",
+    "bits": 2048,
+    "fingerprint": "SHA256:xM1S3mikzq1xfGWaGVc4MH/oCBJyQEqUlEN/gkIQU00=",
+    "info": "",
+    "key-type": "rsa",
+    "user": "seichold"
+   },
+   {
+    ".id": "*7",
+    "bits": 3072,
+    "fingerprint": "SHA256:iZ8lR7z17vseLhWp5Xvv3akzy2HdDPOpIN0EiQn/Yj4=",
+    "info": "ae5au@dsdn.org",
+    "key-type": "rsa",
+    "user": "ae5au"
+   }
+  ],
+  "sstp_clients": [],
+  "sstp_server": [
+   {
+    "authentication": "pap,chap,mschap1,mschap2",
+    "certificate": "none",
+    "ciphers": "aes256-sha,aes256-gcm-sha384",
+    "default-profile": "mhw-sstp",
+    "enabled": true,
+    "keepalive-timeout": 60,
+    "max-mru": 1500,
+    "max-mtu": 1500,
+    "mrru": "disabled",
+    "pfs": false,
+    "port": 443,
+    "tls-version": "any",
+    "verify-client-certificate": false
+   }
+  ],
+  "traffic_flow": [
+   {
+    "active-flow-timeout": "30m",
+    "cache-entries": "256k",
+    "enabled": false,
+    "inactive-flow-timeout": "15s",
+    "interfaces": "all",
+    "packet-sampling": false,
+    "sampling-interval": 0,
+    "sampling-space": 0
+   }
+  ],
+  "traffic_flow_targets": [],
+  "user_groups": [
+   {
+    ".id": "*1",
+    "name": "read",
+    "policy": "local,telnet,ssh,reboot,read,test,winbox,password,web,sniff,sensitive,api,romon,rest-api,!ftp,!write,!policy",
+    "skin": "default"
+   },
+   {
+    ".id": "*2",
+    "name": "write",
+    "policy": "local,telnet,ssh,reboot,read,write,test,winbox,password,web,sniff,sensitive,api,romon,rest-api,!ftp,!policy",
+    "skin": "default"
+   },
+   {
+    ".id": "*3",
+    "name": "full",
+    "policy": "local,telnet,ssh,ftp,reboot,read,write,policy,test,winbox,password,web,sniff,sensitive,api,romon,rest-api",
+    "skin": "default"
+   },
+   {
+    ".id": "*4",
+    "name": "netops-backup-ro",
+    "policy": "ssh,read,!local,!telnet,!ftp,!reboot,!write,!policy,!test,!winbox,!password,!web,!sniff,!sensitive,!api,!romon,!rest-api",
+    "skin": "default"
+   },
+   {
+    ".id": "*5",
+    "name": "netops-backup-full",
+    "policy": "ssh,read,sensitive,!local,!telnet,!ftp,!reboot,!write,!policy,!test,!winbox,!password,!web,!sniff,!api,!romon,!rest-api",
+    "skin": "default"
+   },
+   {
+    ".id": "*6",
+    "name": "mktxp_group",
+    "policy": "read,api,!local,!telnet,!ssh,!ftp,!reboot,!write,!policy,!test,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api",
+    "skin": "default"
+   },
+   {
+    ".id": "*7",
+    "name": "netops-ansible",
+    "policy": "ssh,ftp,read,write,policy,test,api,romon,!local,!telnet,!reboot,!winbox,!password,!web,!sniff,!sensitive,!rest-api",
+    "skin": "default"
+   }
+  ],
+  "users": [
+   {
+    ".id": "*1",
+    "address": "",
+    "comment": "system default user",
+    "disabled": false,
+    "expired": false,
+    "group": "full",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "last-logged-in": "2026-10-13 19:57:00",
+    "name": "admin"
+   },
+   {
+    ".id": "*2",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "netops-ansible",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "last-logged-in": "2026-10-13 19:56:59",
+    "name": "ansible"
+   },
+   {
+    ".id": "*3",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "netops-backup-ro",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "name": "oxidized"
+   },
+   {
+    ".id": "*4",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "netops-backup-full",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "name": "oxidized-full"
+   },
+   {
+    ".id": "*5",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "mktxp_group",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "name": "mktxp"
+   },
+   {
+    ".id": "*6",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "full",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "name": "turnrye"
+   },
+   {
+    ".id": "*7",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "full",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "name": "seichold"
+   },
+   {
+    ".id": "*8",
+    "address": "",
+    "disabled": false,
+    "expired": false,
+    "group": "full",
+    "inactivity-policy": "none",
+    "inactivity-timeout": "10m",
+    "name": "ae5au"
+   }
+  ],
+  "wireguard": [
+   {
+    ".id": "*4",
+    "disabled": false,
+    "listen-port": 51820,
+    "mtu": 1420,
+    "name": "wg-mgmt",
+    "private-key": "<redacted>",
+    "public-key": "SU1QzR+zEPA8txJn/wSV5tEAWZsOhwfoqTLmcDyAVGE=",
+    "running": true
+   }
+  ],
+  "wireguard_peers": [
+   {
+    ".id": "*1",
+    "allowed-address": "10.66.0.10/32",
+    "client-allowed-address": "",
+    "client-endpoint": "",
+    "comment": "operator-0",
+    "current-endpoint-address": "",
+    "current-endpoint-port": 0,
+    "disabled": false,
+    "dynamic": false,
+    "endpoint-address": "",
+    "endpoint-port": 0,
+    "interface": "wg-mgmt",
+    "name": "peer1",
+    "preshared-key": "<redacted>",
+    "private-key": "<redacted>",
+    "public-key": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    "rx": 0,
+    "tx": 0
+   },
+   {
+    ".id": "*2",
+    "allowed-address": "10.66.0.11/32",
+    "client-allowed-address": "",
+    "client-endpoint": "",
+    "comment": "operator-1",
+    "current-endpoint-address": "",
+    "current-endpoint-port": 0,
+    "disabled": false,
+    "dynamic": false,
+    "endpoint-address": "",
+    "endpoint-port": 0,
+    "interface": "wg-mgmt",
+    "name": "peer2",
+    "preshared-key": "<redacted>",
+    "private-key": "<redacted>",
+    "public-key": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
+    "rx": 0,
+    "tx": 0
+   },
+   {
+    ".id": "*3",
+    "allowed-address": "10.66.0.12/32",
+    "client-allowed-address": "",
+    "client-endpoint": "",
+    "comment": "operator-2",
+    "current-endpoint-address": "",
+    "current-endpoint-port": 0,
+    "disabled": false,
+    "dynamic": false,
+    "endpoint-address": "",
+    "endpoint-port": 0,
+    "interface": "wg-mgmt",
+    "name": "peer3",
+    "preshared-key": "<redacted>",
+    "private-key": "<redacted>",
+    "public-key": "Q0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0M=",
+    "rx": 0,
+    "tx": 0
+   }
+  ]
+ },
+ "packages": [
+  {
+   "disabled": false,
+   "name": "routeros",
+   "version": "7.24.5"
+  }
+ ],
+ "routerboard": false,
+ "schema": 1,
+ "total_hdd": 86183936,
+ "uptime": "1m5s",
+ "version": "7.24.5"
+}

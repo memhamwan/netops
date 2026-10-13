@@ -62,26 +62,20 @@
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
+      when: mktxp_password is not defined
 
-    # `operators` is defined once, in the baseline role's defaults —
-    # namespaced so the rest of that file can't shadow this play's vars
-    - name: Load operator list from routeros_baseline defaults
-      ansible.builtin.include_vars:
-        file: "{{ playbook_dir }}/../roles/routeros_baseline/defaults/main.yml"
-        name: baseline_defaults
-
-    - name: Extract operator list
-      ansible.builtin.set_fact:
-        operators: "{{ baseline_defaults.operators }}"
-
+  # `operators` and the group policies are declared once, in
+  # inventory/group_vars/routeros.yml
   tasks:
     - name: Ensure service groups
       community.routeros.command:
         commands:
-          - ':if ([:len [/user group find name=netops-backup-ro]] = 0) do={/user group add name=netops-backup-ro policy=ssh,read}'
-          - ':if ([:len [/user group find name=netops-backup-full]] = 0) do={/user group add name=netops-backup-full policy=ssh,read,sensitive}'
-          - ':if ([:len [/user group find name=mktxp_group]] = 0) do={/user group add name=mktxp_group policy=api,read}'
+          - ':if ([:len [/user group find name=netops-backup-ro]] = 0) do={/user group add name=netops-backup-ro policy={{ policies["netops-backup-ro"] }}}'
+          - ':if ([:len [/user group find name=netops-backup-full]] = 0) do={/user group add name=netops-backup-full policy={{ policies["netops-backup-full"] }}}'
+          - ':if ([:len [/user group find name=mktxp_group]] = 0) do={/user group add name=mktxp_group policy={{ policies["mktxp_group"] }}}'
       changed_when: true
+      vars:
+        policies: "{{ service_groups | items2dict(key_name='name', value_name='policy') }}"
 
     # per-device self-signed TLS cert so api-ssl (8729) can carry mktxp and
     # the baseline role: encrypted transport defeats passive capture on radio
@@ -185,13 +179,15 @@
     - name: Converge group policies and user membership
       community.routeros.command:
         commands:
-          - '/user group set [find name=netops-backup-ro] policy=ssh,read'
-          - '/user group set [find name=netops-backup-full] policy=ssh,read,sensitive'
-          - '/user group set [find name=mktxp_group] policy=api,read'
+          - '/user group set [find name=netops-backup-ro] policy={{ policies["netops-backup-ro"] }}'
+          - '/user group set [find name=netops-backup-full] policy={{ policies["netops-backup-full"] }}'
+          - '/user group set [find name=mktxp_group] policy={{ policies["mktxp_group"] }}'
           - '/user set [find name=oxidized] group=netops-backup-ro'
           - '/user set [find name=oxidized-full] group=netops-backup-full'
           - '/user set [find name=mktxp] group=mktxp_group'
       changed_when: true
+      vars:
+        policies: "{{ service_groups | items2dict(key_name='name', value_name='policy') }}"
 
     # ---- human operators ----
     - name: Collect operator key files

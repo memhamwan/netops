@@ -1,5 +1,7 @@
 ---
-# DRAFT — never executed against a device. Review gate: see role README.
+# Review gate and run history: see role README. Account drift (unexpected
+# users and keys) is reported by routeros_audit and removed by
+# routeros_remediate, not here.
 - name: Service groups + membership
   ansible.builtin.import_tasks: users.yml
 - name: Service lockdown
@@ -12,7 +14,5 @@
   ansible.builtin.import_tasks: dns.yml
 - name: FQDN identity
   ansible.builtin.import_tasks: identity.yml
-- name: User audit (report-only)
-  ansible.builtin.import_tasks: audit.yml
 - name: API source restriction (last — can sever this session)
   ansible.builtin.import_tasks: api_lockdown.yml

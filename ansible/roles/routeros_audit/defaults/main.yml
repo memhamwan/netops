@@ -1,0 +1,16 @@
+---
+# Reports land here (gitignored: ansible/build/). They name accounts, keys,
+# files and addresses: keep them private.
+routeros_audit_dir: "{{ playbook_dir }}/../build/audit"
+
+# RoMON discovery from the core: identity, version and board of every device
+# at layer 2, including the ones the audit must not log in to. Needs the
+# `romon` policy on the API account (service_groups in group_vars).
+routeros_audit_romon: true
+routeros_audit_romon_core: r1.sco.memhamwan.net
+routeros_audit_romon_duration: 15
+
+# TCP management ports checked on every device (connect only, no login):
+# SSH on 22/222, telnet, www, PPTP (proxy kits), winbox, API, API-SSL.
+routeros_audit_probe: true
+routeros_audit_probe_ports: [22, 23, 80, 222, 1723, 8291, 8728, 8729]

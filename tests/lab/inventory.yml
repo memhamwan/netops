@@ -1,0 +1,25 @@
+---
+# Lab inventory: two RouterOS CHR VMs under QEMU on this machine
+# (tests/lab/README.md). Always used together with the real inventory, so the
+# fleet's declared state (inventory/group_vars/routeros.yml) applies unchanged:
+#   cd ansible && ansible-playbook -i inventory/hosts.yml -i ../tests/lab/inventory.yml \
+#     -l lab -e @../tests/lab/lab-vars.yml playbooks/routeros_audit.yml
+all:
+  children:
+    routeros:
+      children:
+        lab:
+          vars:
+            # admin is how tests/lab/lab.py drives the VMs; on the fleet it is retired
+            routeros_allow: {users: [admin]}
+          hosts:
+            chr-a.lab.memhamwan.net:
+              ansible_host: 127.0.0.1
+              ansible_port: 20222
+              routeros_api_address: 127.0.0.1
+              routeros_api_port: 20729
+            chr-b.lab.memhamwan.net:
+              ansible_host: 127.0.0.1
+              ansible_port: 30222
+              routeros_api_address: 127.0.0.1
+              routeros_api_port: 30729
