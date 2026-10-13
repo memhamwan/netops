@@ -284,7 +284,7 @@ Learned during the cleanup; the roles must handle each.
 | SSH/API allow-list property on `/ip service` | `address` | `address` | `available-from` |
 | Per-session dynamic entries in `/ip service` | no (`dynamic` not filterable) | no | yes — always filter `dynamic=no` |
 | SSH password-login setting | `always-allow-password-login` | `always-allow-password-login` | `password-authentication` (`yes` / `no` / `yes-if-no-key`) |
-| `/ip cloud set ddns-enabled=no` | untested | **syntax error** | works (`yes` / `no` / `auto`) |
+| `/ip cloud set ddns-enabled=no` | untested (boolean) | **rejected** | **rejected** — only `yes` / `auto`; `auto` is off (7.24.5 CHR) |
 | `reverse-proxy` service | absent | absent | present, enabled by default |
 | Remote syslog format | `bsd-syslog` | `bsd-syslog` | `remote-log-format` (7.18+, already handled) |
 | Default `/export` | — | **prints secrets in clear** | hides them |

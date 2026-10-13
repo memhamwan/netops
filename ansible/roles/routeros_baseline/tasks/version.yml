@@ -1,0 +1,14 @@
+---
+# Property names and menus differ by RouterOS version; the tasks after this
+# pick theirs from routeros_version. Read-only; check_mode false so --check
+# runs still read the device.
+- name: Read the RouterOS version
+  community.routeros.api:
+    path: system resource
+  register: baseline_resource
+  check_mode: false
+  changed_when: false
+
+- name: Record the RouterOS version
+  ansible.builtin.set_fact:
+    routeros_version: "{{ baseline_resource.msg[0].version.split(' ') | first }}"

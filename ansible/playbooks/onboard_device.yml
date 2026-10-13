@@ -1,5 +1,6 @@
 ---
-# DRAFT — NEVER EXECUTED. Requires -e confirm_execution=true (review gate).
+# Router-changing play: requires -e confirm_execution=true (review gate).
+# Ran fleet-wide 2026-08-29/30 against the devices reachable then.
 #
 # Device onboarding, run over SSH as an operator account: creates the backup
 # and metrics service accounts (replaces the retired
@@ -24,16 +25,16 @@
 #     -l r1.sco.memhamwan.net [-e ansible_user=turnrye] \
 #     [-e rotate_backup_keys=true] [-e rotate_operator_keys=true]
 - name: Onboard backup/metrics service accounts on RouterOS
-  hosts: 'routeros:!excluded:!expected_down'  # lifecycle groups: see inventory
+  hosts: 'routeros:!excluded:!expected_down:!quarantined'  # lifecycle groups: see inventory
   gather_facts: false
   vars:
     ansible_user: "{{ lookup('env', 'USER') }}"
     key_dir: "{{ playbook_dir }}/../roles/routeros_baseline/files"
   pre_tasks:
-    - name: Execution gate — this play is a draft pending review
+    - name: Execution gate — router changes need an explicit, reviewed run
       ansible.builtin.assert:
         that: confirm_execution | default(false) | bool
-        fail_msg: "DRAFT play. Pass -e confirm_execution=true only after PR review."
+        fail_msg: "This play changes routers. Pass -e confirm_execution=true for a reviewed run."
       run_once: true
 
     # same preflight as bootstrap_ansible_user.yml — see comment there

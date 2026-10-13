@@ -243,3 +243,50 @@
       vars:
         ports_text: "{{ lookup('file', render_dir ~ '/10-netops-ports.conf') }}"
         hardening_text: "{{ lookup('file', render_dir ~ '/20-hardening.conf') }}"
+
+# Quarantine: a quarantined host must vanish from the credentialed consumers
+# (mktxp, Oxidized) yet stay probed under its real site. Uses a synthetic
+# host (the group may be empty) and renders into its own directory. Keep this
+# play LAST: add_host changes the in-memory inventory for every later play.
+- name: Render the quarantine variant for validation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build/rendered/quarantine"
+    mktxp_password: dummy
+    ci_quarantined: ci-quarantined.sco.memhamwan.net
+  tasks:
+    - name: Load netops_host defaults (templates reference role vars)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/netops_host/defaults/main.yml"
+
+    - name: Add a synthetic, quarantined SCO device
+      ansible.builtin.add_host:
+        name: "{{ ci_quarantined }}"
+        groups: [routeros, sco, quarantined]
+        ip: 192.0.2.10
+      changed_when: false
+
+    - name: Render directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render the inventory-driven consumers
+      ansible.builtin.template:
+        src: "../roles/netops_host/templates/{{ item }}.j2"
+        dest: "{{ render_dir }}/{{ item }}"
+        mode: "0644"
+      loop: [router.db, mktxp.conf, icmp-routeros.yml, config.alloy]
+
+    - name: Quarantined host is never credentialed, still probed under its site, still logged
+      ansible.builtin.assert:
+        that:
+          - "'ci-quarantined' not in lookup('file', render_dir ~ '/router.db')"
+          - "'ci-quarantined' not in lookup('file', render_dir ~ '/mktxp.conf')"
+          - "'{site: sco, device: ci-quarantined.sco}' in lookup('file', render_dir ~ '/icmp-routeros.yml')"
+          - "'ci-quarantined' in lookup('file', render_dir ~ '/config.alloy')"
+          # the real fleet is untouched by the synthetic quarantine
+          - "'r1.sco.memhamwan.net:routeros' in lookup('file', render_dir ~ '/router.db')"
+        quiet: true

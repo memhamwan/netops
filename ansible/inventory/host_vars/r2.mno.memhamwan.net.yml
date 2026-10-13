@@ -1,0 +1,5 @@
+---
+# Single path in and PoE-powers sec3.mno and more: a remote upgrade that does
+# not come back strands the tower (2026-10-13). Upgrade only with someone on
+# site (routeros_firmware.yml -e site_presence=true).
+upgrade_site_presence_required: true

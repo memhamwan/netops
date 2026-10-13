@@ -1,6 +1,7 @@
 ---
 collections:
   - name: community.routeros
+    version: ">=3.22.0"  # ip service `available-from` on RouterOS 7.24
   - name: community.general
   - name: community.sops
   - name: ansible.netcommon

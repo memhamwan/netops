@@ -1,9 +1,17 @@
 ---
-# DRAFT — never executed against a device. Review gate: see role README.
-- name: Service groups + membership
+# Review gate and run history: see role README. `--check --diff` reports the
+# drift from the declared state without changing anything.
+- name: RouterOS version
+  ansible.builtin.import_tasks: version.yml
+# first, so nothing scheduled can undo the rest mid-run
+- name: Declared menus (schedulers, scripts, VPN/proxy kits, rules)
+  ansible.builtin.import_tasks: config.yml
+- name: Service groups, accounts and their keys
   ansible.builtin.import_tasks: users.yml
 - name: Service lockdown
   ansible.builtin.import_tasks: services.yml
+- name: Files
+  ansible.builtin.import_tasks: files.yml
 - name: Remote syslog
   ansible.builtin.import_tasks: logging.yml
 - name: NTP
@@ -12,7 +20,7 @@
   ansible.builtin.import_tasks: dns.yml
 - name: FQDN identity
   ansible.builtin.import_tasks: identity.yml
-- name: User audit (report-only)
-  ansible.builtin.import_tasks: audit.yml
+- name: Key-only SSH login
+  ansible.builtin.import_tasks: ssh.yml
 - name: API source restriction (last — can sever this session)
   ansible.builtin.import_tasks: api_lockdown.yml

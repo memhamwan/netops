@@ -1,0 +1,4 @@
+---
+# NAT for the private client LAN (from the Oxidized export).
+routeros_firewall_nat:
+  - {action: masquerade, chain: srcnat, src-address: 10.0.0.0/24}

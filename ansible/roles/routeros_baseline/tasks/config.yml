@@ -1,0 +1,19 @@
+---
+# One api_modify per declared menu (routeros_config, see defaults). Entries
+# with handle_absent_entries: remove delete whatever the device has that the
+# list does not name. A menu whose variable is null (host_vars) is skipped.
+- name: Converge declared menus
+  community.routeros.api_modify:
+    path: "{{ item.path }}"
+    data: "{{ item.data }}"
+    handle_absent_entries: "{{ item.handle_absent_entries | default('ignore') }}"
+    handle_entries_content: "{{ item.handle_entries_content | default('ignore') }}"
+    ensure_order: "{{ item.ensure_order | default(false) }}"
+  loop: "{{ routeros_config }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - item.data is not none
+    - none not in item.data
+    - item.min_version is not defined or routeros_version is version(item.min_version, '>=')
+    - item.before_version is not defined or routeros_version is version(item.before_version, '<')

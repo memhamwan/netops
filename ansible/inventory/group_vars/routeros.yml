@@ -1,0 +1,16 @@
+---
+# Fleet-wide settings for RouterOS devices. What a device must look like is
+# declared in roles/routeros_baseline/defaults/main.yml; per-device additions
+# go in host_vars/<host>.yml.
+
+# Sources allowed to reach the management services (SSH, API-SSL). Only the
+# netops host is listed here; operators' addresses are personal, so they live
+# in sops as `management_sources_private` and are loaded with the other
+# secrets. Undefined without it, on purpose: no allow list is ever written
+# without the operators' addresses.
+management_sources:
+  - 44.34.128.45/32  # rpi.sco: mktxp, Oxidized
+management_sources_effective: "{{ (management_sources + management_sources_private) | unique }}"
+
+# The one place the fleet's RouterOS version is set (routeros_firmware).
+routeros_target_version: "7.24.5"

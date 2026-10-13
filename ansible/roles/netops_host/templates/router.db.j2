@@ -1,3 +1,5 @@
-{% for h in groups['routeros'] | difference((groups['excluded'] | default([])) + (groups['expected_down'] | default([]))) | sort %}
+{# credentialed consumer: quarantined hosts are assumed hostile and never get
+   the oxidized key #}
+{% for h in groups['routeros'] | difference((groups['excluded'] | default([])) + (groups['expected_down'] | default([])) + (groups['quarantined'] | default([]))) | sort %}
 {{ h }}:routeros
 {% endfor %}
