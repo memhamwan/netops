@@ -1,0 +1,70 @@
+---
+# Regular files have no business on a router: onboarding leftovers, old
+# exports and backups (which hold secrets), crash reports — and, on a
+# taken-over device, downloaded scripts and payloads. Each is copied off to
+# routeros_files_evidence_dir, then removed. Both steps run over SSH as an
+# operator: removing a backup needs the `sensitive` policy, which the API
+# account deliberately lacks. Disks, directories and staged packages are never
+# touched; routeros_files keeps a file by name.
+- name: List files
+  community.routeros.api:
+    path: file
+    extended_query:
+      attributes: [name, type]
+  register: baseline_files
+  check_mode: false
+  changed_when: false
+
+# names go into a RouterOS command below, so only plain ones are handled
+# automatically; anything else is reported for removal by hand
+- name: Pick the files to remove
+  ansible.builtin.set_fact:
+    baseline_files_to_remove: "{{ candidates | select('match', '^[A-Za-z0-9._/@+=-]+$') | list }}"
+    baseline_files_by_hand: "{{ candidates | reject('match', '^[A-Za-z0-9._/@+=-]+$') | list }}"
+  vars:
+    candidates: >-
+      {{ baseline_files.msg | rejectattr('type', 'in', ['directory', 'disk', 'package'])
+         | map(attribute='name') | reject('in', routeros_files) | list }}
+
+- name: Files to remove
+  ansible.builtin.debug:
+    msg: "{{ baseline_files_to_remove }}"
+  changed_when: true
+  when: baseline_files_to_remove | length > 0
+
+- name: Files with unusual names (remove by hand after a look)
+  ansible.builtin.debug:
+    msg: "{{ baseline_files_by_hand }}"
+  changed_when: true
+  when: baseline_files_by_hand | length > 0
+
+- name: Copy files off and remove them
+  when: baseline_files_to_remove | length > 0 and not ansible_check_mode
+  vars:
+    ssh_target: "{{ ansible_user | default(lookup('env', 'USER')) }}@{{ ansible_host | default(inventory_hostname) }}"
+    evidence: "{{ routeros_files_evidence_dir }}/{{ inventory_hostname }}"
+  block:
+    - name: Evidence directory
+      ansible.builtin.file:
+        path: "{{ evidence }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+
+    # plain scp/ssh from the controller (see bootstrap_ansible_user.yml); a
+    # failed copy fails the host before anything is removed
+    - name: Copy each file off the device
+      ansible.builtin.command: >-
+        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes {{ routeros_scp_opts | default('') }}
+        {{ ssh_target }}:/{{ item }} {{ evidence }}/{{ item | replace('/', '_') }}
+      delegate_to: localhost
+      loop: "{{ baseline_files_to_remove }}"
+      changed_when: true
+
+    - name: Remove the copied files
+      ansible.builtin.command: >-
+        ssh -p {{ ansible_port | default(222) }} -o BatchMode=yes {{ routeros_scp_opts | default('') }}
+        {{ ssh_target }} '/file remove [find where name="{{ item }}"]'
+      delegate_to: localhost
+      loop: "{{ baseline_files_to_remove }}"
+      changed_when: true

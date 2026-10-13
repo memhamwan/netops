@@ -1,24 +1,57 @@
-# routeros_baseline — DRAFT, not yet executed
+# routeros_baseline
 
 **Execution gate: no automation-driven router changes without Ryan's PR
 review.** All three device playbooks (`bootstrap_ansible_user.yml`,
 `onboard_device.yml`, `routeros_baseline.yml`) refuse to run without
-`-e confirm_execution=true`, and that flag must not be used until this role
-has been reviewed. Nothing in these plays has ever run against a device.
+`-e confirm_execution=true`; use it only for a change that has been reviewed,
+and start with `--check --diff`.
+
+**What has run.** All three plays ran fleet-wide on 2026-08-29/30 against the
+devices reachable then: the `ansible` account, the backup and mktxp accounts,
+operator accounts and keys, the per-device api-ssl certificates, and the
+baseline itself (service lockdown with plaintext 8728 disabled, logging, NTP,
+identity). The api-ssl cut-over completed that day (netops PR #12); fixes
+found during the runs are in the 2026-08-29/30 history (e.g. the api-ssl
+certificate usage found on sec3.sco). Device history on several routers shows
+the `ansible` account making those SSH, NTP and service changes. The DNS
+resolver tasks were added afterwards (PR #23) and have no recorded run. Nothing has run
+since the September 2026 compromise; devices changed underneath, so treat the
+first post-incident run as a first run (`--check --diff`, one clean device).
+Devices in the `quarantined` lifecycle group are never targeted.
 
 Replaces the `device-onboarding/*.sh` scripts plus accumulated hand-fixes.
 Account *creation* lives in the two SSH-based plays —
 `bootstrap_ansible_user.yml` (the `ansible` automation account) and
 `onboard_device.yml` (`oxidized`, `oxidized-full`, `mktxp`) — while this role
-runs over the RouterOS API (`api_modify`) and only corrects what exists:
+runs over the RouterOS API (`api_modify`), corrects what exists and removes
+what is not declared. `--check --diff` reports the drift and changes nothing.
 
-- service groups + group membership (creation stays in the bootstrap/onboarding
-  plays — this role can never mint a passwordless account)
-- service lockdown: telnet/ftp/www/www-ssl/winbox off, ssh:222,
-  strong-crypto, MAC-server none, bandwidth-server off; **api-ssl (8729,
-  per-device cert) stays on** restricted to `api_allowed_sources`, plaintext
-  api (8728) disabled (diff from old ioc-terraform role, which disabled the
-  API outright)
+- **declared menus** (`routeros_config` in defaults): one `api_modify` per
+  menu. Schedulers, scripts, PPP accounts and profiles, WireGuard, firewall
+  filter/nat/raw rules and flow-export targets default to *none*, so anything
+  a device has there is removed unless its host_vars lists it (or sets the
+  variable to `null` to leave that menu alone until it is declared — see
+  `inventory/host_vars/er1.atl.memhamwan.net.yml`). PPTP/L2TP/SSTP servers,
+  SOCKS, web proxy, traffic-flow and DDNS are off; the memory log is 1000
+  lines. Pools, mangle rules and OVPN are not managed (DHCP pools and MSS
+  clamping are legitimate on most devices).
+- **accounts**: every account outside `routeros_allowed_accounts` (service
+  accounts, `operators`, per-device `routeros_extra_accounts`) is removed —
+  the factory `admin`, `hamwan` and `packetbard` included — with the SSH keys
+  of removed accounts. Nothing is ever created (this role can never mint a
+  passwordless account). Extra keys on a declared account are replaced by
+  `onboard_device.yml -e rotate_operator_keys=true`.
+- **files**: every regular file (not disks, directories or staged packages)
+  is copied to `routeros_files_evidence_dir` and removed, over SSH as an
+  operator (removing backups needs the `sensitive` policy the API account
+  lacks); `routeros_files` keeps one by name
+- service lockdown: telnet/ftp/www/www-ssl/winbox/reverse-proxy off, ssh:222
+  restricted to the management sources, strong-crypto, no SSH forwarding,
+  MAC-server none, bandwidth-server off; **api-ssl (8729, per-device cert)
+  stays on** restricted to `api_allowed_sources`, plaintext api (8728)
+  disabled (diff from old ioc-terraform role, which disabled the API outright)
+- key-only SSH login (7.21+), only once every remaining SSH account holds a
+  key — the role stops otherwise
 - remote syslog (7.18+/pre-7.18 schema fallback) + topic rules
 - NTP with `time.cloudflare.com` fallback (fleet drifts when LEB is dark)
 - DNS resolvers (`/ip dns servers`): internal anycast + Cloudflare fallback —
@@ -27,7 +60,11 @@ runs over the RouterOS API (`api_modify`) and only corrects what exists:
   (routers aren't open resolvers; override `dns_allow_remote_requests` per device
   if one truly serves local clients)
 - FQDN identity enforcement
-- user audit (report-only — never deletes)
+
+Needs community.routeros 3.22+ (`ansible-galaxy collection install -r
+requirements.yml --upgrade`): 7.24 renamed the `/ip service` allow list to
+`available-from`. Verified end to end on a RouterOS 7.24.5 CHR carrying the
+September 2026 artifacts: one run removed them, a second run changed nothing.
 
 ## Known open questions for review
 

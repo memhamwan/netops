@@ -73,6 +73,14 @@ untouched (no reboot), so re-running to resume after a failure is safe.
 
 ## Specifying a version
 
+The fleet target is `routeros_target_version` in
+`inventory/group_vars/routeros.yml` (7.24.5); `-e routeros_target_version=`
+(empty) goes back to the channel's latest.
+
+Devices with `upgrade_site_presence_required: true` in host_vars (single path
+in, PoE source for others — r2.mno, after its 2026-10-13 upgrade did not come
+back) stop the whole run unless `-e site_presence=true`.
+
 - **Latest on a channel** — leave `routeros_target_version` empty; the channel's
   `latest-version` is the expected end state.
 - **Pin an exact version** — `-e routeros_target_version=7.24.1`. Online, the run

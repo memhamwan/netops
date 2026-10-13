@@ -1,26 +1,40 @@
 ---
 # Service lockdown, ported from ioc-terraform's routeros role with one
 # deliberate change: the API stays reachable — as api-ssl (8729, per-device
-# cert from the onboarding play) restricted to the collector (mktxp + this
-# role's own transport) — instead of disabled outright.
+# cert from the onboarding play) restricted to management_sources_effective —
+# instead of disabled outright.
 # api and api-ssl are managed in api_lockdown.yml, imported LAST — changing
 # them can sever this very session, so everything else must already be applied.
+- name: Read IP services
+  community.routeros.api:
+    path: ip service
+  register: baseline_services
+  check_mode: false
+  changed_when: false
+
+# reverse-proxy exists from 7.22 (enabled by default); the allow-list
+# property is `available-from` from 7.24, `address` before
 - name: Configure IP services
   community.routeros.api_modify:
     path: ip service
-    data:
-      - {name: telnet, disabled: true}
-      - {name: ftp, disabled: true}
-      - {name: www, disabled: true}
-      - {name: www-ssl, disabled: true}
-      - {name: winbox, disabled: true}
-      - {name: ssh, port: 222}
+    data: >-
+      {{ [{'name': 'telnet', 'disabled': true},
+          {'name': 'ftp', 'disabled': true},
+          {'name': 'www', 'disabled': true},
+          {'name': 'www-ssl', 'disabled': true},
+          {'name': 'winbox', 'disabled': true},
+          {'name': 'ssh', 'port': 222, 'disabled': false,
+           source_key: management_sources_effective | join(',')}]
+         + ([{'name': 'reverse-proxy', 'disabled': true}]
+            if 'reverse-proxy' in (baseline_services.msg | map(attribute='name')) else []) }}
+  vars:
+    source_key: "{{ 'available-from' if routeros_version is version('7.24', '>=') else 'address' }}"
 
-- name: Enforce SSH strong crypto
+- name: Enforce SSH strong crypto and port forwarding
   community.routeros.api_modify:
     path: ip ssh
     data:
-      - {strong-crypto: true}
+      - {strong-crypto: true, forwarding-enabled: "{{ routeros_ssh_forwarding }}"}
 
 - name: Disable bandwidth test server
   community.routeros.api_modify:

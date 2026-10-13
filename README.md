@@ -90,6 +90,16 @@ encrypted in `secrets/secrets.sops.yaml`, readable by holders of either age
 key listed in `.sops.yaml` (the shared netops key or turnrye's local key).
 The backup host keeps working copies in `/var/lib/netops/secrets/`.
 
+The same file holds `management_sources_private`, the operators' addresses
+(CIDRs): private because the repo is public. It is merged with the public
+`management_sources` in `ansible/inventory/group_vars/routeros.yml` into the
+SSH and API-SSL allow lists the baseline writes, and the baseline fails
+without it:
+
+```sh
+sops set secrets/secrets.sops.yaml '["management_sources_private"]' '["198.51.100.7/32"]'
+```
+
 To read them locally:
 
 ```sh
@@ -113,9 +123,15 @@ To add a recipient: add their `age1...` public key to `.sops.yaml`, then
 DNS management). The Oxidized fleet list, blackbox targets, and mktxp config
 are all templated from it at deploy time.
 
-Dead or missing devices go in one of two lifecycle groups (they stay in their
-site groups as IPAM record either way):
+Hostile, dead or missing devices go in one of three lifecycle groups (they
+stay in their site groups as IPAM record either way):
 
+- **`quarantined`** — assume hostile (e.g. taken over and no longer under our
+  control). Still ICMP-probed and alerted on, still in DNS, but never
+  authenticated to: dropped from Oxidized, mktxp and every device play, so no
+  credential is ever sent to it. Leaving quarantine takes a cleanup (or
+  Netinstall) and a clean `routeros_baseline.yml --check --diff`. The repo is
+  public, so listing a host here says it is hostile.
 - **`excluded`** — cannot meaningfully be monitored at all (never deployed, or
   no known address). Dropped from every rendered consumer: ICMP probes,
   Oxidized, mktxp, the device plays, and DNS publishing.
@@ -127,8 +143,8 @@ site groups as IPAM record either way):
   which cannot reach them anyway.
 
 The one deliberate exception is the Alloy syslog allowlist, which keeps hosts
-from both groups — logs arriving from a supposedly-dead device are signal
-worth capturing. Moving a host between groups takes a backup-host redeploy to
+from every lifecycle group — logs arriving from a supposedly-dead or hostile
+device are signal worth capturing. Moving a host between groups takes a backup-host redeploy to
 apply. CI enforces the hygiene this depends on: every rendered probe target
 must be an IP or a resolvable name, and no two fleet devices may share an
 OSPF router-id (checked against the latest Oxidized exports).
@@ -177,18 +193,27 @@ diff as an incident to investigate, not a formality.
 
 To add a device: add it to the inventory, run the bootstrap/onboarding plays —
 `bootstrap_ansible_user.yml` (automation account) and `onboard_device.yml`
-(backup + mktxp service accounts) — then the baseline play (all three DRAFT —
-pending review, see ansible/roles/routeros_baseline/README.md), then deploy
-the backup host to pick up the new fleet list.
+(backup + mktxp service accounts) — then the baseline play (all three gated
+by `-e confirm_execution=true`; see ansible/roles/routeros_baseline/README.md),
+then deploy the backup host to pick up the new fleet list.
+
+**Declared device config.** `routeros_baseline.yml` converges every router to
+the config declared in `ansible/roles/routeros_baseline/defaults/main.yml`
+(per-device additions in `ansible/inventory/host_vars/`) and removes what is
+not declared: accounts, schedulers, scripts, PPP, WireGuard, firewall rules,
+regular files. `--check --diff` is the drift report. Declare a device's
+legitimate extras in its host_vars before a real run there.
 
 ## Layout
 
 ```
 ansible/             inventory (source of truth), playbooks, roles
+  inventory/group_vars/    fleet-wide settings (routeros.yml: management sources, version)
+  inventory/host_vars/     per-device additions to the declared config
   roles/netops_host/       deploys the whole rpi.sco stack (configs live here)
-  roles/routeros_baseline/ DRAFT device baseline — never executed, see its README
+  roles/routeros_baseline/ declared device config (ran 2026-08-29/30), see its README
   roles/site_services/     DRAFT DNS/NTP + anycast — never executed, see its README
-docs/                design docs (site services / anycast)
+docs/                design docs (site services / anycast, RouterOS convergence)
 secrets/             sops/age-encrypted runtime secrets
 tests/prometheus/    promtool unit tests for the alert rules
 ```
