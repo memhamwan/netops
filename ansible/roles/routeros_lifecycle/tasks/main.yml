@@ -51,6 +51,17 @@
   loop: "{{ management_sources_private }}"
   run_once: true
 
+# onto every fleet host, not just this play's: plays that render fleet-wide
+# files from hostvars (the netops host deploy) need each device's
+# management_sources_effective, which builds on this list
+- name: Give every fleet host the operators' management sources
+  ansible.builtin.set_fact:
+    management_sources_private: "{{ management_sources_private }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['routeros'] }}"
+  run_once: true
+
 # add_host on an existing host adds the group membership and keeps its vars,
 # so later plays' `:!quarantined` patterns and the netops_host templates see
 # the full list. Runs for the whole list regardless of --limit.
@@ -61,6 +72,13 @@
   loop: "{{ quarantined_hosts }}"
   run_once: true
   changed_when: false
+
+# the devices this run covers (after --limit), quarantined ones included:
+# reports that describe "the fleet" stay within what was asked for
+- name: Record the run's scope
+  ansible.builtin.set_fact:
+    routeros_run_scope: "{{ ansible_play_hosts_all | intersect(groups['routeros']) }}"
+  run_once: true
 
 - name: Report quarantined hosts this run will not touch
   ansible.builtin.debug:
