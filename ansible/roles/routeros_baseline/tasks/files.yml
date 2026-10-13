@@ -38,10 +38,16 @@
   changed_when: true
   when: baseline_files_by_hand | length > 0
 
+# resolved here, not in the delegated tasks below: under delegate_to the
+# connection vars (ansible_host, ansible_port, ansible_user) are localhost's
+- name: Where to reach the device over SSH
+  ansible.builtin.set_fact:
+    baseline_ssh_target: "{{ ansible_user | default(lookup('env', 'USER')) }}@{{ ansible_host | default(inventory_hostname) }}"
+    baseline_ssh_port: "{{ ansible_port | default(222) }}"
+
 - name: Copy files off and remove them
   when: baseline_files_to_remove | length > 0 and not ansible_check_mode
   vars:
-    ssh_target: "{{ ansible_user | default(lookup('env', 'USER')) }}@{{ ansible_host | default(inventory_hostname) }}"
     evidence: "{{ routeros_files_evidence_dir }}/{{ inventory_hostname }}"
   block:
     - name: Evidence directory
@@ -55,16 +61,16 @@
     # failed copy fails the host before anything is removed
     - name: Copy each file off the device
       ansible.builtin.command: >-
-        scp -O -P {{ ansible_port | default(222) }} -o BatchMode=yes {{ routeros_scp_opts | default('') }}
-        {{ ssh_target }}:/{{ item }} {{ evidence }}/{{ item | replace('/', '_') }}
+        scp -O -P {{ baseline_ssh_port }} -o BatchMode=yes {{ routeros_scp_opts | default('') }}
+        {{ baseline_ssh_target }}:/{{ item }} {{ evidence }}/{{ item | replace('/', '_') }}
       delegate_to: localhost
       loop: "{{ baseline_files_to_remove }}"
       changed_when: true
 
     - name: Remove the copied files
       ansible.builtin.command: >-
-        ssh -p {{ ansible_port | default(222) }} -o BatchMode=yes {{ routeros_scp_opts | default('') }}
-        {{ ssh_target }} '/file remove [find where name="{{ item }}"]'
+        ssh -p {{ baseline_ssh_port }} -o BatchMode=yes {{ routeros_scp_opts | default('') }}
+        {{ baseline_ssh_target }} '/file remove [find where name="{{ item }}"]'
       delegate_to: localhost
       loop: "{{ baseline_files_to_remove }}"
       changed_when: true
