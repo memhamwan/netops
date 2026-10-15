@@ -90,7 +90,9 @@ Changes needed: every play's host pattern gains `:!quarantined`;
 skips it. **Trap:** `icmp-routeros.yml.j2` takes the `site` label from the first
 group name that is not a lifecycle group, so `quarantined` must be added to that
 reject list or quarantined hosts get `site: quarantined`. Leaving quarantine
-requires remediation (or Netinstall + restore) followed by a clean audit.
+takes a Netinstall + restore: a remediation or audit run would send the fleet
+credential to a device that is still untrusted. Once rebuilt, it leaves the
+group and is onboarded like a new device.
 
 ### Declared state (variables)
 
