@@ -86,7 +86,8 @@ back) stop the whole run unless `-e site_presence=true`.
 - **Pin an exact version** — `-e routeros_target_version=7.24.1`. Online, the run
   refuses to reboot unless the channel actually serves that version (so it never
   reboots toward an unreachable target), and the final check asserts every device
-  ends on it.
+  ends on it. A device already on the pin skips the channel query, so a channel
+  that has moved on fails only the devices still below the pin.
 - **Force a version the channel isn't serving** (a specific/older build, or
   catching a v6 box up to a chosen v7) — use the offline path:
   `-e routeros_npk_source_dir=~/routeros-npks`, with files laid out as
