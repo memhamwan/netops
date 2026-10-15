@@ -1,35 +1,7 @@
 ---
 # Key-only SSH login (`password-authentication=no`, 7.21+; older versions
-# have no setting that refuses passwords). Runs after the account cleanup,
-# and only if every remaining account that can log in over SSH holds a key —
-# otherwise it stops: turning passwords off would lock that account out.
-- name: Read SSH keys
-  community.routeros.api:
-    path: user ssh-keys
-  register: baseline_keys
-  check_mode: false
-  changed_when: false
-
-- name: Every remaining SSH account holds a key
-  ansible.builtin.assert:
-    that: keyless | length == 0
-    fail_msg: >-
-      Not turning password login off on {{ inventory_hostname }}: these SSH
-      accounts have no key and would be locked out: {{ keyless | join(', ') }}.
-      Import their keys (onboard_device.yml) first.
-    quiet: true
-  vars:
-    # accounts whose group grants ssh: operators, extras, and the service
-    # accounts except the API-only ones
-    ssh_accounts: >-
-      {{ operators + routeros_extra_accounts
-         + (routeros_service_accounts | dict2items
-            | selectattr('value', 'in', service_groups | selectattr('policy', 'search', '(^|,)ssh(,|$)') | map(attribute='name') | list)
-            | map(attribute='key') | list) }}
-    present: "{{ baseline_users.msg | map(attribute='name') | list }}"
-    keyless: "{{ ssh_accounts | select('in', present) | reject('in', baseline_keys.msg | map(attribute='user') | list) | list }}"
-  when: not routeros_ssh_password_login
-
+# have no setting that refuses passwords). preflight.yml has already checked
+# that every remaining SSH account holds a key, so this can't lock one out.
 - name: Key-only SSH login
   community.routeros.api_modify:
     path: ip ssh
