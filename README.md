@@ -129,9 +129,10 @@ stay in their site groups as IPAM record either way):
 - **`quarantined`** — assume hostile (e.g. taken over and no longer under our
   control). Still ICMP-probed and alerted on, still in DNS, but never
   authenticated to: dropped from Oxidized, mktxp and every device play, so no
-  credential is ever sent to it. Leaving quarantine takes a cleanup (or
-  Netinstall) and a clean `routeros_baseline.yml --check --diff`. The repo is
-  public, so listing a host here says it is hostile.
+  credential is ever sent to it. Leaving quarantine takes a Netinstall: only
+  then is the device trusted with a credential again. Then remove it from the
+  group, onboard it like a new device and run `routeros_baseline.yml`. The
+  repo is public, so listing a host here says it is hostile.
 - **`excluded`** — cannot meaningfully be monitored at all (never deployed, or
   no known address). Dropped from every rendered consumer: ICMP probes,
   Oxidized, mktxp, the device plays, and DNS publishing.
