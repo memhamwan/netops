@@ -1,0 +1,47 @@
+---
+# Checks that would otherwise stop a host partway, run before anything
+# changes. A failure here leaves the device untouched. Read-only queries;
+# check_mode false so --check runs still get real data.
+
+# also the account list users.yml works from: nothing before it changes users
+- name: Fetch current users
+  community.routeros.api:
+    path: user
+  register: baseline_users
+  check_mode: false
+  changed_when: false
+
+# ssh.yml turns password login off (7.21+). Only declared accounts are
+# checked, and the cleanup keeps those and their keys, so the answer here is
+# the one ssh.yml would get.
+- name: Read SSH keys
+  community.routeros.api:
+    path: user ssh-keys
+  register: baseline_keys
+  check_mode: false
+  changed_when: false
+  when:
+    - not routeros_ssh_password_login
+    - routeros_version is version('7.21', '>=')
+
+- name: Every SSH account holds a key
+  ansible.builtin.assert:
+    that: keyless | length == 0
+    fail_msg: >-
+      Not converging {{ inventory_hostname }}: these SSH accounts have no key
+      and key-only login would lock them out: {{ keyless | join(', ') }}.
+      Import their keys (onboard_device.yml) first.
+    quiet: true
+  vars:
+    # accounts whose group grants ssh: operators, extras, and the service
+    # accounts except the API-only ones
+    ssh_accounts: >-
+      {{ operators + routeros_extra_accounts
+         + (routeros_service_accounts | dict2items
+            | selectattr('value', 'in', service_groups | selectattr('policy', 'search', '(^|,)ssh(,|$)') | map(attribute='name') | list)
+            | map(attribute='key') | list) }}
+    present: "{{ baseline_users.msg | map(attribute='name') | list }}"
+    keyless: "{{ ssh_accounts | select('in', present) | reject('in', baseline_keys.msg | map(attribute='user') | list) | list }}"
+  when:
+    - not routeros_ssh_password_login
+    - routeros_version is version('7.21', '>=')

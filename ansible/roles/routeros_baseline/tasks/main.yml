@@ -3,7 +3,10 @@
 # drift from the declared state without changing anything.
 - name: RouterOS version
   ansible.builtin.import_tasks: version.yml
-# first, so nothing scheduled can undo the rest mid-run
+# before any change, so a failed check leaves the device untouched
+- name: Preflight
+  ansible.builtin.import_tasks: preflight.yml
+# first change, so nothing scheduled can undo the rest mid-run
 - name: Declared menus (schedulers, scripts, VPN/proxy kits, rules)
   ansible.builtin.import_tasks: config.yml
 - name: Service groups, accounts and their keys

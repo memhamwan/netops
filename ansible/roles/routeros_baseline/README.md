@@ -50,8 +50,8 @@ what is not declared. `--check --diff` reports the drift and changes nothing.
   MAC-server none, bandwidth-server off; **api-ssl (8729, per-device cert)
   stays on** restricted to `api_allowed_sources`, plaintext api (8728)
   disabled (diff from old ioc-terraform role, which disabled the API outright)
-- key-only SSH login (7.21+), only once every remaining SSH account holds a
-  key — the role stops otherwise
+- key-only SSH login (7.21+), only if every remaining SSH account holds a
+  key — checked before any change; the role stops there otherwise
 - remote syslog (7.18+/pre-7.18 schema fallback) + topic rules
 - NTP with `time.cloudflare.com` fallback (fleet drifts when LEB is dark)
 - DNS resolvers (`/ip dns servers`): internal anycast + Cloudflare fallback —
