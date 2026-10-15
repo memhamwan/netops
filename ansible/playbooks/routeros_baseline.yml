@@ -72,5 +72,17 @@
       run_once: true
       delegate_to: localhost
       when: routeros_svc_api_password is not defined
+    # every allow list includes the operators' addresses; without them the
+    # run would stop at services.yml, after the cleanup had already run
+    - name: Preflight — operators' management addresses loaded
+      ansible.builtin.assert:
+        that:
+          - management_sources_private is defined
+          - management_sources_private | length > 0
+        fail_msg: >-
+          management_sources_private is not set. It comes from sops, which is
+          skipped when routeros_svc_api_password is passed with -e: pass
+          management_sources_private with -e as well, or let sops load.
+      run_once: true
   roles:
     - routeros_baseline
