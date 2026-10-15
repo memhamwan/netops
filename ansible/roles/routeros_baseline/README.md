@@ -32,7 +32,8 @@ what is not declared. `--check --diff` reports the drift and changes nothing.
   a device has there is removed unless its host_vars lists it (or sets the
   variable to `null` to leave that menu alone until it is declared — see
   `inventory/host_vars/er1.atl.memhamwan.net.yml`). PPTP/L2TP/SSTP servers,
-  SOCKS, web proxy, traffic-flow and DDNS are off; the memory log is 1000
+  SOCKS, web proxy, traffic-flow and DDNS are off, Back To Home (MikroTik's
+  cloud-relayed VPN) is revoked; the memory log is 1000
   lines. Pools, mangle rules and OVPN are not managed (DHCP pools and MSS
   clamping are legitimate on most devices).
 - **accounts**: every account outside `routeros_allowed_accounts` (service
