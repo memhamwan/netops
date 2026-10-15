@@ -65,11 +65,25 @@
     - _fw_phase | default('all') in ['check', 'all']
     - routeros_npk_source_dir | length > 0
 
+# A device already on the pinned version needs nothing from the channel (as in
+# offline mode): a channel that has moved past the pin must not fail it, and it
+# needs no route to upgrade.mikrotik.com.
+- name: RouterOS package check (already on the pinned version)
+  ansible.builtin.set_fact:
+    expected_version: "{{ routeros_target_version }}"
+    os_upgrade_needed: false
+  when:
+    - _fw_phase | default('all') in ['check', 'all']
+    - routeros_npk_source_dir | length == 0
+    - routeros_target_version | length > 0
+    - installed_version == routeros_target_version
+
 - name: RouterOS package check (online channel)
   ansible.builtin.include_tasks: os_online_check.yml
   when:
     - _fw_phase | default('all') in ['check', 'all']
     - routeros_npk_source_dir | length == 0
+    - (routeros_target_version | length == 0) or (installed_version != routeros_target_version)
 
 # Whether this device needs the (serial) apply phase at all: a RouterOS package
 # upgrade, OR — even when already on the target version — a RouterBOARD firmware
