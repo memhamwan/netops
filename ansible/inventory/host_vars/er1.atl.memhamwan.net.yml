@@ -9,3 +9,6 @@ routeros_wireguard: null
 routeros_wireguard_peers: null
 routeros_firewall_filter: null
 routeros_sstp_server: null
+
+# jump host: `ssh -J` needs local (direct-tcpip) forwarding
+routeros_ssh_forwarding: local

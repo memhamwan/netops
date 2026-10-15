@@ -124,6 +124,7 @@ routeros_files_evidence_dir: "{{ lookup('env', 'HOME') }}/netops-evidence"
 
 # SSH: only key logins (from 7.21; the role first checks every remaining
 # SSH account holds a key, and stops otherwise) and no port forwarding.
+# A jump host sets forwarding to `local` (what `ssh -J` needs) in host_vars.
 routeros_ssh_password_login: false
 routeros_ssh_forwarding: false
 
