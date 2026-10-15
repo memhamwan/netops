@@ -23,7 +23,9 @@ newest_epoch=0
 # compare the local bare repo HEAD to the remote main to observe publication.
 # ls-remote failure (github/network down) also reads as unpublished: correct,
 # since the push can't be succeeding either.
-local_head=$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo local-unknown)
+# The repo is owned by the oxidized container user; as root under systemd
+# (no HOME, so no global safe.directory) git refuses it as dubious ownership.
+local_head=$(git -c safe.directory="$REPO" -C "$REPO" rev-parse HEAD 2>/dev/null || echo local-unknown)
 remote_head=$(GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   git ls-remote "$REMOTE" refs/heads/main 2>/dev/null | cut -f1 || true)
 pushed=0
