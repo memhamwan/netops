@@ -109,8 +109,12 @@ routeros_config:
   - {path: ip traffic-flow, data: ["{{ routeros_traffic_flow }}"]}
   - {path: ip traffic-flow target, data: "{{ routeros_traffic_flow_targets }}", handle_absent_entries: remove,
      handle_entries_content: remove_as_much_as_possible}
+  # Back To Home: a WireGuard VPN into the router, set up from MikroTik's app
+  # and relayed through their cloud. Revoking removes its interface, peers and
+  # users. RouterOS has it from 7.12; community.routeros sets it from 7.15.
+  - {path: ip cloud, data: [{back-to-home-vpn: revoked-and-disabled}], min_version: "7.15"}
   # DDNS publishes the router's address. From 7.17 the property takes only
-  # yes|auto (`no` is rejected); auto stays off without back-to-home VPN.
+  # yes|auto (`no` is rejected); auto stays off once Back To Home is revoked.
   - {path: ip cloud, data: [{ddns-enabled: auto}], min_version: "7.17"}
   - {path: ip cloud, data: [{ddns-enabled: false}], before_version: "7.17"}
   # attackers cut the memory log to 1 line to hide their tracks
