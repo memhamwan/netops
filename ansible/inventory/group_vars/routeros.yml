@@ -10,6 +10,13 @@
 # without the operators' addresses.
 management_sources:
   - 44.34.128.45/32  # rpi.sco: mktxp, Oxidized
+  # er1.atl as a second jump host (ssh -J er1.atl.memhamwan.net:222 ...).
+  # Its connections leave from the local address of the link they take, not
+  # one fixed address — only its own ends, never the link subnets (a far end
+  # can be a quarantined device).
+  - 44.34.129.209/32  # er1.atl bridge1
+  - 44.34.131.172/32  # er1.atl end of oob-sco, the live backbone via r1.sco
+  - 44.34.131.176/32  # er1.atl end of wg-sco-lte, the LTE backup
 management_sources_effective: "{{ (management_sources + management_sources_private) | unique }}"
 
 # The one place the fleet's RouterOS version is set (routeros_firmware).
