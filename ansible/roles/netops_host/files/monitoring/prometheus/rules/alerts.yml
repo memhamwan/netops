@@ -21,6 +21,21 @@ groups:
           summary: "Site {{ $labels.site }} entirely unreachable"
           description: "Every monitored device at {{ $labels.site }} is failing ICMP"
 
+  - name: ports
+    rules:
+      # A physical port on an SCO router came up or went down (mktxp link
+      # state). A notice, not a fault: fires on the change and resolves five
+      # minutes later. The value is the new state (1 up, 0 down).
+      - alert: SCOPortChanged
+        expr: >-
+          mktxp_interface_running{routerboard_name=~".+\\.sco",name=~"ether.*|sfp.*"}
+          and changes(mktxp_interface_running{routerboard_name=~".+\\.sco",name=~"ether.*|sfp.*"}[5m]) > 0
+        labels:
+          severity: info
+          site: sco
+        annotations:
+          summary: "{{ $labels.routerboard_name }} {{ $labels.name }} is now {{ if eq $value 1.0 }}up{{ else }}down{{ end }}"
+
   - name: services
     rules:
       - alert: ServiceHTTPDown

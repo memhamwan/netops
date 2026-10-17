@@ -87,3 +87,42 @@ tests:
             exp_annotations:
               summary: "Site azo entirely unreachable"
               description: "Every monitored device at azo is failing ICMP"
+
+  # ── SCO port changes notify once, both directions, physical ports only ──
+  - interval: 1m
+    name: SCO port up/down notifies, other sites and bridges do not
+    input_series:
+      - series: 'mktxp_interface_running{job="mktxp",instance="mktxp:49090",routerboard_name="r1.sco",name="ether16"}'
+        values: "0x10 1x20"
+      - series: 'mktxp_interface_running{job="mktxp",instance="mktxp:49090",routerboard_name="r2.sco",name="ether3"}'
+        values: "1x10 0x20"
+      - series: 'mktxp_interface_running{job="mktxp",instance="mktxp:49090",routerboard_name="r1.mno",name="ether1"}'
+        values: "1x10 0x20"
+      - series: 'mktxp_interface_running{job="mktxp",instance="mktxp:49090",routerboard_name="r1.sco",name="internal-nat"}'
+        values: "1x10 0x20"
+    alert_rule_test:
+      - eval_time: 13m
+        alertname: SCOPortChanged
+        exp_alerts:
+          - exp_labels:
+              job: mktxp
+              instance: mktxp:49090
+              routerboard_name: r1.sco
+              name: ether16
+              severity: info
+              site: sco
+            exp_annotations:
+              summary: "r1.sco ether16 is now up"
+          - exp_labels:
+              job: mktxp
+              instance: mktxp:49090
+              routerboard_name: r2.sco
+              name: ether3
+              severity: info
+              site: sco
+            exp_annotations:
+              summary: "r2.sco ether3 is now down"
+      # resolved once the change is out of the 5m window
+      - eval_time: 25m
+        alertname: SCOPortChanged
+        exp_alerts: []
