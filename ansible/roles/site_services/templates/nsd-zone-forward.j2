@@ -19,9 +19,9 @@ $TTL {{ dns_zone_ttl }}
 {% for ns_rec in dns_ns_records %}
 {{ ns_rec.name }} IN A {{ ns_rec.ip }}
 {% endfor %}
-; ── Fleet devices (from the inventory `ip:` fields; down hosts excluded) ──
+; ── Fleet devices (from the inventory `ip:` fields; excluded hosts dropped) ──
 {% for host in groups['all'] | sort %}
-{% if hostvars[host].ip is defined and host not in (groups['down'] | default([])) %}
+{% if hostvars[host].ip is defined and host not in (groups['excluded'] | default([])) %}
 {{ host }}. IN A {{ hostvars[host].ip }}
 {% endif %}
 {% endfor %}
