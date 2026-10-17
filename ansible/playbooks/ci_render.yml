@@ -256,8 +256,9 @@
           - "'ns2 IN A 44.34.133.53' in fwd"
           - "'r1.sco.memhamwan.net. IN A 44.34.128.33' in fwd"
           - "'dns-probe.memhamwan.net. 300 IN A 192.0.2.53' in fwd"
-          # a down host (leb.sco is in groups['down']) must not be published
-          - "'leb.sco.memhamwan.net. IN A' not in fwd"
+          # an excluded host is not published; an expected_down one is
+          - "'lte.sco.memhamwan.net. IN A' not in fwd"
+          - "'r1.leb.memhamwan.net. IN A 44.34.128.161' in fwd"
         quiet: true
       vars:
         fwd: "{{ lookup('file', render_dir ~ '/memhamwan.net.zone') }}"
@@ -267,8 +268,8 @@
         that:
           - "'45 IN PTR rpi.sco.memhamwan.net.' in rev"
           - "'33 IN PTR r1.sco.memhamwan.net.' in rev"
-          # leb.sco (44.34.128.40) is down — no PTR either
-          - "'40 IN PTR leb.sco.memhamwan.net.' not in rev"
+          # lte.sco (44.34.128.38) is excluded — no PTR either
+          - "'38 IN PTR lte.sco.memhamwan.net.' not in rev"
         quiet: true
       vars:
         rev: "{{ lookup('file', render_dir ~ '/128.34.44.in-addr.arpa.zone') }}"
