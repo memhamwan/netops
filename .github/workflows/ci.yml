@@ -144,9 +144,11 @@ jobs:
       # - r2.mno: never onboarded — oxidized gets AuthenticationFailed
       #   (found 2026-09-07 by this very check). Remove after running
       #   onboard_device.yml against it.
+      # - r2.ftn: new switch (2026-11). Remove after its first Oxidized export.
       - name: OSPF router-ids are unique across the fleet
         run: >
           python tests/check_ospf_router_ids.py
           --allow-missing leb.sco.memhamwan.net
           --allow-missing r2.mno.memhamwan.net
+          --allow-missing r2.ftn.memhamwan.net
           ansible/inventory/hosts.yml /tmp/routeros-config-audit
