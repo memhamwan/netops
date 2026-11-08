@@ -1,6 +1,14 @@
 ---
 # Deploy the backup/monitoring stack to rpi.sco.
 #   ansible-playbook playbooks/netops_host.yml
+# Config-only deploys can skip linux_baseline, packages, firewall, systemd and
+# compose (untagged, so they run only on a full deploy):
+#   --tags monitoring   prometheus/grafana/alertmanager/blackbox/loki/caddy/
+#                       alloy/mktxp config and their secret files
+#   --tags oxidized     oxidized config, model override, router.db
+#   --tags inventory    only the files rendered from the inventory (router.db,
+#                       probe targets, alloy, mktxp.conf)
+# A new container or compose change still needs a full run.
 # (Not router config — outside the router-change review gate.)
 - name: Deploy netops stack to backup host
   hosts: netops_hosts
@@ -12,5 +20,6 @@
         file: "{{ playbook_dir }}/../../secrets/secrets.sops.yaml"
       delegate_to: localhost
       become: false
+      tags: [always]
   roles:
     - netops_host

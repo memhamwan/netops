@@ -33,6 +33,7 @@
   loop: [oxidized, monitoring, full-backup, metrics]
 
 - name: Oxidized config directories
+  tags: [oxidized]
   ansible.builtin.file:
     path: "{{ netops_var }}/oxidized/{{ item }}"
     state: directory
@@ -42,6 +43,7 @@
   loop: ["", model]
 
 - name: Install oxidized config + model override
+  tags: [oxidized]
   ansible.builtin.copy:
     src: "oxidized/{{ item.src }}"
     dest: "{{ netops_var }}/oxidized/{{ item.dest }}"
@@ -54,6 +56,7 @@
   notify: restart oxidized
 
 - name: Render oxidized fleet list from inventory
+  tags: [oxidized, inventory]
   ansible.builtin.template:
     src: router.db.j2
     dest: "{{ netops_var }}/oxidized/router.db"
@@ -64,6 +67,7 @@
 
 # prometheus reloads over its lifecycle endpoint instead of restarting
 - name: Install prometheus config
+  tags: [monitoring]
   ansible.posix.synchronize:
     src: "{{ role_path }}/files/monitoring/prometheus"
     dest: "{{ netops_var }}/monitoring/"
@@ -77,6 +81,7 @@
   notify: reload prometheus
 
 - name: Install monitoring configs
+  tags: [monitoring]
   ansible.posix.synchronize:
     src: "{{ role_path }}/files/monitoring/{{ item }}"
     dest: "{{ netops_var }}/monitoring/"
@@ -88,12 +93,14 @@
   notify: restart reconfigured monitoring containers
 
 - name: Alloy config directory
+  tags: [monitoring]
   ansible.builtin.file:
     path: "{{ netops_var }}/monitoring/alloy"
     state: directory
     mode: "0755"
 
 - name: Render alloy config from inventory
+  tags: [monitoring, inventory]
   ansible.builtin.template:
     src: config.alloy.j2
     dest: "{{ netops_var }}/monitoring/alloy/config.alloy"
@@ -101,6 +108,7 @@
   notify: restart alloy
 
 - name: Render blackbox targets from inventory
+  tags: [monitoring, inventory]
   ansible.builtin.template:
     src: "{{ item }}.j2"
     dest: "{{ netops_var }}/monitoring/prometheus/targets/{{ item }}"
@@ -120,12 +128,14 @@
 # Each secret is owned by (and bind-mounted into) the one container that
 # consumes it, so a compromised container can only read its own credential.
 - name: Secrets directory
+  tags: [monitoring]
   ansible.builtin.file:
     path: "{{ netops_var }}/secrets"
     state: directory
     mode: "0750"
 
 - name: Write grafana admin password
+  tags: [monitoring]
   ansible.builtin.copy:
     content: "{{ grafana_admin_password }}"
     dest: "{{ netops_var }}/secrets/grafana-admin-password"
@@ -139,6 +149,7 @@
     - restart grafana
 
 - name: Write discord webhook url
+  tags: [monitoring]
   ansible.builtin.copy:
     content: "{{ discord_webhook_url }}"
     dest: "{{ netops_var }}/secrets/discord-webhook-url"
@@ -150,6 +161,7 @@
 
 # operator reference only — caddy consumes the bcrypt hash in the snippet
 - name: Write netops basic-auth password
+  tags: [monitoring]
   ansible.builtin.copy:
     content: "{{ caddy_basicauth_password }}"
     dest: "{{ netops_var }}/secrets/netops-basicauth-password"
@@ -159,12 +171,14 @@
   no_log: true
 
 - name: Remove retired mktxp-password working copy (mktxp.conf holds it)
+  tags: [monitoring]
   ansible.builtin.file:
     path: "{{ netops_var }}/secrets/mktxp-password"
     state: absent
 
 # no_log: the bcrypt verifier enables offline guessing; --diff would print it
 - name: Write caddy auth snippet
+  tags: [monitoring]
   ansible.builtin.template:
     src: caddy-auth.snippet.j2
     dest: "{{ netops_var }}/secrets/caddy-auth.snippet"
@@ -176,6 +190,7 @@
 
 # no_log: the rendered file holds the fleet API password; --diff would print it
 - name: Render mktxp.conf from inventory + sops
+  tags: [monitoring, inventory]
   ansible.builtin.template:
     src: mktxp.conf.j2
     dest: "{{ netops_var }}/mktxp/mktxp.conf"
@@ -184,6 +199,7 @@
   notify: restart mktxp
 
 - name: Install mktxp exporter settings
+  tags: [monitoring]
   ansible.builtin.copy:
     src: monitoring/mktxp/_mktxp.conf
     dest: "{{ netops_var }}/mktxp/_mktxp.conf"
