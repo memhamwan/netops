@@ -1,0 +1,169 @@
+{
+  "uid": "link-latency",
+  "title": "Link latency",
+  "description": "Latency, jitter and loss across one link, from the blackbox ICMP probes on rpi.sco (one ping per device per minute). Pick the device on the near side of the link and the one on the far side; the hop is far minus near, which removes the shared path to the near device. Stats cover the selected time range, so set the range to before and after a change to compare.",
+  "tags": ["memhamwan"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "time": { "from": "now-14d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "near",
+        "label": "Near side",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(probe_success{job=\"blackbox-icmp\"}, device)", "refId": "near" },
+        "definition": "label_values(probe_success{job=\"blackbox-icmp\"}, device)",
+        "current": { "text": "ftn.sco", "value": "ftn.sco" },
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "name": "far",
+        "label": "Far side",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(probe_success{job=\"blackbox-icmp\"}, device)", "refId": "far" },
+        "definition": "label_values(probe_success{job=\"blackbox-icmp\"}, device)",
+        "current": { "text": "sco.ftn", "value": "sco.ftn" },
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "name": "window",
+        "label": "Rolling window",
+        "type": "custom",
+        "query": "15m,1h,6h,1d",
+        "current": { "text": "1h", "value": "1h" },
+        "options": [
+          { "text": "15m", "value": "15m", "selected": false },
+          { "text": "1h", "value": "1h", "selected": true },
+          { "text": "6h", "value": "6h", "selected": false },
+          { "text": "1d", "value": "1d", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Hop p50",
+      "description": "Median of far minus near round-trip time over the selected range.",
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "refId": "A", "instant": true, "expr": "quantile_over_time(0.5, (max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$__range:1m]) * 1000" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Hop p95",
+      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "refId": "A", "instant": true, "expr": "quantile_over_time(0.95, (max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$__range:1m]) * 1000" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Hop p99",
+      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "refId": "A", "instant": true, "expr": "quantile_over_time(0.99, (max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$__range:1m]) * 1000" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Hop jitter (stddev)",
+      "description": "Standard deviation of the hop round-trip time over the selected range. One sample a minute, so this is variation between minutes, not packet-to-packet jitter.",
+      "gridPos": { "h": 4, "w": 5, "x": 15, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "refId": "A", "instant": true, "expr": "stddev_over_time((max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$__range:1m]) * 1000" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Far loss",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "refId": "A", "instant": true, "expr": "100 * (1 - avg_over_time(probe_success{job=\"blackbox-icmp\",device=\"$far\"}[$__range]))" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Round-trip time, near and far",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "points", "pointSize": 3 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=~\"$near|$far\"} * 1000", "legendFormat": "{{device}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Hop round-trip time, rolling $window",
+      "description": "Far minus near, as percentiles over the rolling window.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "quantile_over_time(0.5, (max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$window:1m]) * 1000", "legendFormat": "p50" },
+        { "refId": "B", "expr": "quantile_over_time(0.95, (max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$window:1m]) * 1000", "legendFormat": "p95" },
+        { "refId": "C", "expr": "quantile_over_time(0.99, (max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$window:1m]) * 1000", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Jitter, rolling $window",
+      "description": "Hop stddev, and the mean change between consecutive far samples (one a minute).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "stddev_over_time((max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$near\"}))[$window:1m]) * 1000", "legendFormat": "hop stddev" },
+        { "refId": "B", "expr": "avg_over_time((abs(max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"}) - max(probe_icmp_duration_seconds{job=\"blackbox-icmp\",phase=\"rtt\",device=\"$far\"} offset 1m)))[$window:1m]) * 1000", "legendFormat": "far mean change between samples" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Loss, rolling $window",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "100 * (1 - avg_over_time(probe_success{job=\"blackbox-icmp\",device=~\"$near|$far\"}[$window]))", "legendFormat": "{{device}}" }
+      ]
+    }
+  ]
+}
