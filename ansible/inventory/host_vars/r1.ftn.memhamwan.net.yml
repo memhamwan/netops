@@ -1,0 +1,5 @@
+---
+# Netinstalled to 7.25.1 on FTN day (2026-11), matching r2.ftn and sco.ftn.
+# Pinned here so the firmware role leaves it alone instead of querying the
+# channel; drop this when the fleet pin reaches it.
+routeros_target_version: "7.25.1"
