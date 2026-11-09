@@ -3,3 +3,9 @@
 # Pinned here so the firmware role leaves it alone instead of querying the
 # channel; drop this when the fleet pin reaches it.
 routeros_target_version: "7.25.1"
+
+# NAT for the HamWAN Wi-Fi client LAN and the (disabled) broadband WAN, as
+# /export prints them on the rebuilt box.
+routeros_firewall_nat:
+  - {action: masquerade, chain: srcnat, comment: nat for wifi, out-interface: public-devices-without-dhcp, src-address: 192.168.50.0/24}
+  - {action: masquerade, chain: srcnat, comment: nat for the broadband wan, out-interface: ether4}
