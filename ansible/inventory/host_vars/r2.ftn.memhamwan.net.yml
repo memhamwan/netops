@@ -1,0 +1,5 @@
+---
+# Built new on 7.25.1, above the fleet pin (2026-11-07). Pinned here so the
+# firmware role leaves it alone instead of querying the channel; drop this when
+# the fleet pin reaches it.
+routeros_target_version: "7.25.1"

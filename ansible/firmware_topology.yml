@@ -50,10 +50,13 @@ firmware_topology:
   # depth 5 — MNO end of the HIL<->MNO backhaul
   hil.mno.memhamwan.net: {fw_depth: 5, fw_parent: mno.hil.memhamwan.net}
 
+  # depth 5 — behind the FTN switch
+  r1.ftn.memhamwan.net: {fw_depth: 5, fw_parent: r2.ftn.memhamwan.net}
+
   # depth 4
   mno.hil.memhamwan.net: {fw_depth: 4, fw_parent: r2.hil.memhamwan.net}  # HIL end of the HIL<->MNO backhaul
   r1.hil.memhamwan.net: {fw_depth: 4, fw_parent: r2.hil.memhamwan.net}
-  r1.ftn.memhamwan.net: {fw_depth: 4, fw_parent: sco.ftn.memhamwan.net}
+  r2.ftn.memhamwan.net: {fw_depth: 4, fw_parent: sco.ftn.memhamwan.net}  # PowerBox switch between the dish and r1.ftn (2026-11, not from a RoMON scan)
 
   # depth 3
   r2.hil.memhamwan.net: {fw_depth: 3, fw_parent: sco.hil.memhamwan.net}
